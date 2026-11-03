@@ -927,6 +927,58 @@ function makeEngineHarness(html, options = {}) {
   assert(name.value === '', 'form: reset metin degerini temizler');
 }
 
+/* Yapistirma normalizasyonu, odak ve gizleme etkilesimi. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <form id="f">
+      <input id="name" name="ad" type="text">
+      <textarea id="ta" name="mesaj" rows="2" cols="12"></textarea>
+      <select id="sel" name="konu">
+        <option value="">Seç…</option>
+        <option value="a">Alfa</option>
+        <option value="b">Beta</option>
+      </select>
+    </form>`);
+  const doc = engine.document;
+  const name = doc.getElementById('name');
+  const textarea = doc.getElementById('ta');
+  const select = doc.getElementById('sel');
+
+  name.focus();
+  engine.insertClipboardText('bir\r\niki\nüç');
+  assert(name.value === 'bir iki üç', 'yapistirma: tek satirli kontrollerde satir sonlari bosluga doner');
+
+  textarea.focus();
+  engine.insertClipboardText('a\r\nb');
+  assert(textarea.value === 'a\nb', 'yapistirma: textarea satir sonlarini korur');
+
+  engine.showValidation(name, 'Bu alan zorunlu.');
+  engine.insertText(name, 'm');
+  assert(engine.validation === null && name.value === 'bir iki üçm',
+    'yapistirma: yazarken dogrulama balonu gizlenir');
+}
+
+/* Kaydirma ve ozel tuslar select listesini kapatir. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <select id="sel">
+      <option value="a">Alfa</option>
+      <option value="b">Beta</option>
+    </select>`);
+  const doc = engine.document;
+  const select = doc.getElementById('sel');
+
+  select.focus();
+  engine.handleKeyDown({ key: ' ' });
+  assert(!!engine.selectPopup, 'kaydirma: liste acikken test baslangici gecerli');
+  engine.handleKeyDown({ key: 'Escape' });
+  assert(!engine.selectPopup, 'klavye: Escape acik listeyi kapatir');
+
+  engine.handleKeyDown({ key: ' ' });
+  engine.scrollTo({ top: 3 });
+  assert(!engine.selectPopup, 'kaydirma: sayfa kaydirilinca liste kapanir');
+}
+
 if (failures > 0) {
   console.error(`\n${failures} test başarısız.`);
   process.exitCode = 1;
