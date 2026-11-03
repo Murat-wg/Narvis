@@ -96,6 +96,14 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   `Shift` ile seçim, `Ctrl+A`, `Ctrl+C/X/V`, `Tab`/`Shift+Tab` odak sırası,
   `Enter` ile gönderme ve `Escape` ile odaktan çıkma. Tek satırlı kontroller
   yatay kaydırılır, `textarea` satır sonlarını korur.
+- Fare: metin kontrolünde imleç şekli; tıklayarak imleç konumu, sürükleyerek
+  seçim, çift tıkla kelime seçimi (`textarea`'da satır sınırlı). Sürükleme
+  seçimi her fare hareketinde anında uygulanır; sürüklemenin sonundaki
+  tıklama seçimi ezmez.
+- Geri al/yinele: metin düzenlemelerinde `Ctrl+Z`, `Ctrl+Y` ve
+  `Ctrl+Shift+Z`; her kontrol kendi anlık görüntü zincirini tutar
+  (en fazla 100 adım), `historyUndo`/`historyRedo` `input` olayları
+  sayfaya bildirilir.
 - Doğrulama: `required`, `email`/`url`/`number` tip denetimi, `pattern`,
   `minlength`/`maxlength`, sayılarda `min`/`max`/`step` ve
   `setCustomValidity`. Geçersiz form gönderilmez; ilk geçersiz kontrol odaklanır
@@ -202,8 +210,8 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
 - `::before` / `::after` yalnızca `content` metnini destekler; `counter()`,
   `attr()`, `open-quote`/`close-quote` ve `url()` içerikleri üretilmez.
 - Harici CSS ve script dosyaları yüklenmez; yalnızca sayfa içi `<style>` / `<script>`.
-- Formlarda dosya yükleme/dosya seçici, çoklu `select` için açılır liste,
-  fareyle sürükleyerek metin seçimi ve IME kompozisyonu yok. `select` listesi
+- Formlarda dosya yükleme/dosya seçici, çoklu `select` için açılır liste ve
+  IME kompozisyonu yok. `select` listesi
   tekli seçim içindir; `multiple` yalnızca değer API'si ve form verisinde
   tutulur. `number` dışındaki tarih/sayı biçimleri native denetimlerle
   sınırlı değildir.

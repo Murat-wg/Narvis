@@ -51,6 +51,11 @@ export class NarvisEngine {
     this.validation = null;
     this._typeahead = '';
     this._typeaheadTimer = null;
+    this._drag = null;      // fare secim suruklemesi
+    this._dragEnded = null; // su ana biten surukleme (click'imleci ezmesin diye)
+    this._lastClick = null; // cift tik algilama
+    this._undo = new Map(); // el -> onceki deger/caret anlik goruntuleri
+    this._redo = new Map();
     this._fetch = options.fetchImpl ?? (typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null);
     this.onStats = options.onStats ?? null;
     this.onConsole = options.onConsole ?? null;
@@ -77,6 +82,11 @@ export class NarvisEngine {
     this.selectPopup = null;
     this.validation = null;
     this._typeahead = '';
+    this._drag = null;
+    this._dragEnded = null;
+    this._lastClick = null;
+    this._undo = new Map();
+    this._redo = new Map();
     this.document = parseDocument(this.source, { url: this.url });
     this.document.defaultView = this.createWindow();
     this.window = this.document.defaultView;
@@ -301,6 +311,22 @@ export class NarvisEngine {
   }
 
   pointerMove(x, y) {
+    /* Surukleme secimi: odakli metin kontrolunde imlocu tasir. */
+    if (this._drag?.selecting && isTextControl(this._drag.el)) {
+      const el = this._drag.el;
+      const anchor = this.selectionAnchor(el);
+      const position = this.caretIndexAtPoint(el, x, y);
+      const start = el.selectionStart ?? position;
+      const end = el.selectionEnd ?? position;
+      if (position !== start || position !== end) {
+        this._drag.moved = position !== anchor;
+        this.setCaretRange(el, Math.min(position, anchor), Math.max(position, anchor), anchor);
+        this.invalidate();
+      }
+      this.canvas.style.cursor = 'text';
+      return el;
+    }
+
     if (this.selectPopup) {
       const hit = this.selectPopupHit(x, y);
       if (hit.inside) {
@@ -319,6 +345,9 @@ export class NarvisEngine {
       this.setHover(el);
     }
     let cursor = el?._style?.cursor ?? 'auto';
+    if (cursor === 'auto' && isTextControl(el) && !isDisabled(el) && !el.hasAttribute('readonly')) {
+      cursor = 'text';
+    }
     if (cursor === 'auto') {
       const interactive = el?.closest?.('a[href], button, input[type="checkbox"], input[type="radio"], input[type="submit"], input[type="reset"], input[type="button"], select, [role="button"]');
       if (interactive) cursor = 'pointer';
@@ -339,6 +368,10 @@ export class NarvisEngine {
   }
 
   click(x, y, options = {}) {
+    /* Surukleme seciminde tiklama imleci bastan kurmasin. */
+    const dragEnded = this._dragEnded;
+    this._dragEnded = null;
+
     /* Acik select listesi DOM'un ustunde bir katman: once onu dene. */
     const popup = this.selectPopup;
     if (popup) {
@@ -372,7 +405,8 @@ export class NarvisEngine {
     });
     el.dispatchEvent(event);
     if (!event.defaultPrevented) {
-      this.applyFormDefaults(el, { x, y, shiftKey: !!options.shiftKey });
+      const skipCaret = dragEnded && dragEnded.moved && dragEnded.el === el;
+      this.applyFormDefaults(el, skipCaret ? null : { x, y, shiftKey: !!options.shiftKey });
       const anchor = el.closest?.('a[href]');
       if (anchor) {
         const href = anchor.getAttribute('href');
@@ -380,6 +414,55 @@ export class NarvisEngine {
       }
     }
     return el;
+  }
+
+  pointerDown(x, y, options = {}) {
+    if (!this.document) return null;
+    const el = this.elementAt(x, y);
+    const now = Date.now();
+    const last = this._lastClick;
+    const isDoubleClick = !!(last && last.el === el && now - last.time < 450
+      && Math.abs(last.x - x) < 4 && Math.abs(last.y - y) < 4);
+    this._lastClick = { el, x, y, time: now };
+    this._dragEnded = null;
+
+    if (this.selectPopup) {
+      const hit = this.selectPopupHit(x, y);
+      if (!hit.inside) this.closeSelect();
+      this._drag = null;
+      return el;
+    }
+
+    if (!el) {
+      this._drag = null;
+      return null;
+    }
+
+    if (isTextControl(el) && !isDisabled(el) && !el.hasAttribute('readonly')) {
+      el.focus();
+      if (isDoubleClick) {
+        this.selectWordAtPoint(el, x, y);
+        this._drag = { el, moved: true, selecting: true };
+      } else {
+        this.setCaretFromPoint(el, x, y, !!options.shiftKey);
+        this._drag = { el, moved: false, selecting: true };
+      }
+      return el;
+    }
+
+    this._drag = { el, moved: false };
+    return el;
+  }
+
+  pointerUp(x, y) {
+    const drag = this._drag;
+    this._drag = null;
+    this._dragEnded = drag && drag.el ? drag : null;
+    return drag?.el ?? this.elementAt(x, y);
+  }
+
+  isDragSelecting() {
+    return !!this._drag?.selecting;
   }
 
   /* Form kontrollerinin tarayici varsayilan davranisi: checkbox/radio
@@ -623,6 +706,12 @@ export class NarvisEngine {
     const value = String(el.value ?? '');
 
     if (ctrl) {
+      if (key.toLowerCase() === 'z') {
+        return init.shiftKey ? this.redoText(el) : this.undoText(el);
+      }
+      if (key.toLowerCase() === 'y') {
+        return this.redoText(el);
+      }
       if (key.toLowerCase() === 'a') {
         this.setCaretRange(el, 0, value.length, 0);
         this.invalidate();
@@ -780,6 +869,7 @@ export class NarvisEngine {
     });
     if (!el.dispatchEvent(before)) return false;
 
+    this._recordUndo(el);
     const next = value.slice(0, start) + inserted + value.slice(end);
     el._value = next;
     el._selStart = start + inserted.length;
@@ -811,6 +901,7 @@ export class NarvisEngine {
     const before = new Event('beforeinput', { bubbles: true, cancelable: true, inputType, data: null });
     if (!el.dispatchEvent(before)) return false;
 
+    this._recordUndo(el);
     el._value = nextValue;
     el._selStart = nextStart;
     el._selEnd = nextStart;
@@ -824,6 +915,62 @@ export class NarvisEngine {
     if (this.validation?.el === el) this.hideValidation();
     el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, inputType, data }));
     this.invalidate();
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Geri al / yinele (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z)
+   * ---------------------------------------------------------------- */
+
+  textSnapshot(el) {
+    return {
+      value: String(el.value ?? ''),
+      selStart: el.selectionStart ?? 0,
+      selEnd: el.selectionEnd ?? 0,
+      anchor: this.selectionAnchor(el),
+    };
+  }
+
+  _recordUndo(el) {
+    const stack = this._undo.get(el) ?? [];
+    stack.push(this.textSnapshot(el));
+    if (stack.length > 100) stack.shift();
+    this._undo.set(el, stack);
+    this._redo.delete(el);
+  }
+
+  restoreTextSnapshot(el, snapshot, inputType) {
+    if (!snapshot) return;
+    el._value = snapshot.value;
+    el._selStart = Math.max(0, Math.min(snapshot.value.length, snapshot.selStart));
+    el._selEnd = Math.max(el._selStart, Math.min(snapshot.value.length, snapshot.selEnd));
+    el._selAnchor = Math.max(0, Math.min(snapshot.value.length, snapshot.anchor));
+    this.afterTextInput(el, inputType, null);
+  }
+
+  undoText(el) {
+    if (!isTextControl(el) || isDisabled(el) || el.hasAttribute('readonly')) return false;
+    const stack = this._undo.get(el);
+    if (!stack?.length) return false;
+    const redo = this._redo.get(el) ?? [];
+    redo.push(this.textSnapshot(el));
+    this._redo.set(el, redo);
+    const snapshot = stack.pop();
+    this._undo.set(el, stack);
+    this.restoreTextSnapshot(el, snapshot, 'historyUndo');
+    return true;
+  }
+
+  redoText(el) {
+    if (!isTextControl(el) || isDisabled(el) || el.hasAttribute('readonly')) return false;
+    const stack = this._redo.get(el);
+    if (!stack?.length) return false;
+    const undo = this._undo.get(el) ?? [];
+    undo.push(this.textSnapshot(el));
+    this._undo.set(el, undo);
+    const snapshot = stack.pop();
+    this._redo.set(el, stack);
+    this.restoreTextSnapshot(el, snapshot, 'historyRedo');
+    return true;
   }
 
   insertClipboardText(text) {
@@ -852,29 +999,31 @@ export class NarvisEngine {
     return text;
   }
 
-  setCaretFromPoint(el, x, y, extend = false) {
+  caretIndexAtPoint(el, x, y) {
     const box = el?._box;
-    if (!box || !isTextControl(el)) return;
-    const style = { ...el._style, fontWeight: 400 };
+    if (!box) return 0;
     const cx = box.contentX;
     const cy = box.contentY;
     const value = String(el.value ?? '');
-    let position = 0;
+    const style = { ...(el._style ?? {}), fontWeight: 400 };
 
     if (el.localName === 'textarea') {
       const lh = typeof el._style?.lineHeight === 'number' && el._style.lineHeight > 0
         ? el._style.lineHeight : (el._style?.fontSize || 16) * 1.4;
       const lines = value.split('\n');
       const localY = y + this.scrollY - cy;
-      let lineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor(localY / lh)));
+      const lineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor(localY / lh)));
       let lineStart = 0;
       for (let i = 0; i < lineIndex; i++) lineStart += lines[i].length + 1;
-      const localX = x + this.scrollX - cx;
-      position = lineStart + this.nearestCaretIndex(lines[lineIndex], localX, style);
-    } else {
-      const localX = x + this.scrollX - cx + (el._paintScrollX || 0);
-      position = this.nearestCaretIndex(value, localX, style);
+      return lineStart + this.nearestCaretIndex(lines[lineIndex], x + this.scrollX - cx, style);
     }
+    return this.nearestCaretIndex(value, x + this.scrollX - cx + (el._paintScrollX || 0), style);
+  }
+
+  setCaretFromPoint(el, x, y, extend = false) {
+    const box = el?._box;
+    if (!box || !isTextControl(el)) return;
+    const position = this.caretIndexAtPoint(el, x, y);
 
     if (extend) {
       const anchor = this.selectionAnchor(el);
@@ -884,6 +1033,26 @@ export class NarvisEngine {
     }
     if (this.validation?.el === el) this.hideValidation();
     this.invalidate();
+  }
+
+  /* Cift tik kelime secimi: imlecin en yakin oldugu sozu secer. */
+  selectWordAtPoint(el, x, y) {
+    if (!isTextControl(el)) return null;
+    const value = String(el.value ?? '');
+    const position = this.caretIndexAtPoint(el, x, y);
+    let start = this.wordBoundary(value, position, -1);
+    let end = this.wordBoundary(value, position, 1);
+    /* wordBoundary boşlukları kelime sonuna dahil eder; seçimde temizle. */
+    while (end > start && /\s/.test(value[end - 1])) end--;
+    if (el.localName === 'textarea') {
+      const line = this.lineBounds(value, position);
+      start = Math.max(start, line.start);
+      end = Math.min(end, line.end);
+    }
+    if (end <= start) this.setCaretRange(el, position, position, position);
+    else this.setCaretRange(el, start, end, start);
+    this.invalidate();
+    return { start, end };
   }
 
   nearestCaretIndex(text, x, style) {

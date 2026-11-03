@@ -367,9 +367,17 @@ function canvasPoint(event) {
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
+/* Sürükleyerek metin seçerken imleç her harekette anında uygulanır; normal
+   hover kontrolünde frame başına bir kez hareket ettirilir. */
 canvas.addEventListener('mousemove', (event) => {
   const point = canvasPoint(event);
   lastPointer = point;
+  if (engine.isDragSelecting()) {
+    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+    engine.pointerMove(point.x, point.y);
+    if (state.inspect) canvas.style.cursor = 'crosshair';
+    return;
+  }
   if (moveRaf) return;
   moveRaf = requestAnimationFrame(() => {
     moveRaf = 0;
@@ -380,6 +388,19 @@ canvas.addEventListener('mousemove', (event) => {
 
 canvas.addEventListener('mouseleave', () => {
   engine.setHover(null);
+});
+
+/* Fare asagi/yukari: motor surukleme secimini ve cift tigi yonetir. */
+canvas.addEventListener('mousedown', (event) => {
+  if (event.button !== 0) return;
+  const point = canvasPoint(event);
+  engine.pointerDown(point.x, point.y, { shiftKey: event.shiftKey });
+});
+
+canvas.addEventListener('mouseup', (event) => {
+  if (event.button !== 0) return;
+  const point = canvasPoint(event);
+  engine.pointerUp(point.x, point.y);
 });
 
 canvas.addEventListener('click', (event) => {

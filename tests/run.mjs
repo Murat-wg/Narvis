@@ -958,6 +958,79 @@ function makeEngineHarness(html, options = {}) {
     'yapistirma: yazarken dogrulama balonu gizlenir');
 }
 
+/* Fare secimi (surukleme + cift tik) ve geri al/yinele. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <form id="f">
+      <input id="name" name="ad" type="text">
+      <textarea id="ta" name="mesaj" rows="2" cols="14"></textarea>
+    </form>`);
+  const doc = engine.document;
+  const name = doc.getElementById('name');
+  const textarea = doc.getElementById('ta');
+
+  /* Geri al / yinele zinciri. */
+  name.focus();
+  engine.insertText(name, 'abc');
+  engine.insertText(name, 'def');
+  assert(name.value === 'abcdef', 'duzenleme: ekleme kaydi tutulur');
+  engine.handleKeyDown({ key: 'z', ctrlKey: true });
+  assert(name.value === 'abc', 'duzenleme: Ctrl+Z son ekmeyi geri alir');
+  engine.handleKeyDown({ key: 'z', ctrlKey: true });
+  assert(name.value === '', 'duzenleme: ikinci Ctrl+Z bos duruma doner');
+  engine.handleKeyDown({ key: 'y', ctrlKey: true });
+  assert(name.value === 'abc' && name.selectionStart === 3,
+    'duzenleme: Ctrl+Y degisikligi yeniden uygular');
+  engine.handleKeyDown({ key: 'y', ctrlKey: true });
+  assert(name.value === 'abcdef', 'duzenleme: yineleme tum zinciri kurtarir');
+  engine.handleKeyDown({ key: 'z', ctrlKey: true });
+  engine.handleKeyDown({ key: 'Z', shiftKey: true, ctrlKey: true });
+  assert(name.value === 'abcdef', 'duzenleme: Ctrl+Shift+Z yineleme yapar');
+
+  /* Cift tikla kelime secimi: input. */
+  name.value = 'merhaba dunya';
+  const box = name._box;
+  const cx = box.contentX;
+  const wordX = cx + 31; /* 'merhaba' kelimesinin ici */
+  engine._lastClick = null;
+  engine.pointerDown(wordX, box.y + 8);
+  engine.pointerUp(wordX, box.y + 8);
+  engine.pointerDown(wordX, box.y + 8);
+  engine.pointerUp(wordX, box.y + 8);
+  assert(name.selectionStart === 0 && name.selectionEnd === 7,
+    'fare: cift tik kelimeyi secer');
+
+  /* Surukleme secimi. */
+  const dragEnd = cx + 100;
+  engine.pointerDown(cx + 2, box.y + 8);
+  engine.pointerMove(dragEnd, box.y + 8);
+  engine.pointerUp(dragEnd, box.y + 8);
+  assert(name.selectionStart === 0 && name.selectionEnd >= 10,
+    'fare: surukleme secim araligi olusturur');
+  /* Sürüklemeden sonra gelen click sekimi ezmez. */
+  engine.click(wordX, box.y + 8);
+  assert(name.selectionStart === 0 && name.selectionEnd >= 10,
+    'fare: suruklemeden sonra gelen click secimi ezmez');
+
+  /* Yeni tek tik secimi imlece daraltilir. */
+  engine.pointerDown(wordX, box.y + 8);
+  engine.pointerUp(wordX, box.y + 8);
+  engine.click(wordX, box.y + 8);
+  assert(name.selectionStart === name.selectionEnd,
+    'fare: tek tik secimi imlece daraltilir');
+
+  /* Textarea'da cift tik kelime secimi satir sinirli. */
+  textarea.value = 'bir satir\nikinci';
+  const tb = textarea._box;
+  engine._lastClick = null;
+  engine.pointerDown(tb.contentX + 53, tb.y + 10);
+  engine.pointerUp(tb.contentX + 53, tb.y + 10);
+  engine.pointerDown(tb.contentX + 53, tb.y + 10);
+  engine.pointerUp(tb.contentX + 53, tb.y + 10);
+  assert(textarea.value.slice(textarea.selectionStart, textarea.selectionEnd) === 'satir',
+    'fare: textarea cift tigi ayni satirdaki kelimeyi secer');
+}
+
 /* Kaydirma ve ozel tuslar select listesini kapatir. */
 {
   const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
