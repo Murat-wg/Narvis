@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Narvis — kendi HTML/JS motoru</title>
+  <meta name="description" content="Narvis: sıfırdan yazılmış, Canvas üzerine çizen küçük bir HTML/CSS/JS motoru.">
+  <link rel="stylesheet" href="styles/shell.css">
+</head>
+<body>
+  <div class="app">
+    <header class="chrome">
+      <div class="chrome-left">
+        <a class="brand" href="pages/demo.html" id="brand" title="Demo sayfasına dön">
+          <span class="brand-mark">N</span>
+          <span class="brand-name">Narvis</span>
+          <span class="brand-version">0.1</span>
+        </a>
+
+        <div class="nav-actions">
+          <button class="icon-btn" id="backBtn" type="button" title="Geri (Alt+Sol)" aria-label="Geri" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.8 3.2 5 8l4.8 4.8"/></svg>
+          </button>
+          <button class="icon-btn" id="forwardBtn" type="button" title="İleri (Alt+Sağ)" aria-label="İleri" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 3.2 11 8l-4.8 4.8"/></svg>
+          </button>
+          <button class="icon-btn" id="reloadBtn" type="button" title="Yenile (Ctrl+R)" aria-label="Yenile">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 2.8v3h-3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <form class="address" id="addressForm" spellcheck="false">
+        <span class="address-scheme">narvis://</span>
+        <input class="address-input" id="addressInput" type="text" value="pages/demo.html"
+               spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Sayfa adresi">
+        <span class="address-badge" id="addressBadge">motor</span>
+      </form>
+
+      <div class="chrome-right">
+        <div class="segmented" id="viewports" role="group" aria-label="Görünüm boyutu">
+          <button type="button" class="view-btn is-active" data-preset="desktop" title="Masaüstü">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.5" width="12.4" height="8.4" rx="1.4"/><path d="M6 13.5h4M8 11v2.5"/></svg>
+            <span>Masaüstü</span>
+          </button>
+          <button type="button" class="view-btn" data-preset="tablet" title="Tablet — 820 px">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.2" y="1.8" width="9.6" height="12.4" rx="1.6"/><path d="M7.2 12.2h1.6"/></svg>
+            <span>Tablet</span>
+          </button>
+          <button type="button" class="view-btn" data-preset="mobile" title="Mobil — 390 px">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.6" y="1.6" width="6.8" height="12.8" rx="1.7"/><path d="M7.1 12.3h1.8"/></svg>
+            <span>Mobil</span>
+          </button>
+        </div>
+
+        <button class="icon-btn" id="inspectBtn" type="button" title="Öğe seç (incele)" aria-label="Öğe seç" aria-pressed="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.8 12.5 9l-4 .7 2.1 4.1-2 .9-2-4.2L3.9 13 3 1.8Z"/></svg>
+        </button>
+
+        <button class="tool-btn" id="editorBtn" type="button" title="Kaynak düzenleyiciyi aç (Ctrl+E)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.7 4.3 2 8l3.7 3.7M10.3 4.3 14 8l-3.7 3.7M9.2 2.3l-2.4 11.4"/></svg>
+          <span>Kaynak</span>
+          <kbd>Ctrl E</kbd>
+        </button>
+
+        <button class="icon-btn" id="devtoolsBtn" type="button" title="Geliştirici araçları (Ctrl+Shift+I)" aria-label="Geliştirici araçları" aria-pressed="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.7" y="2.2" width="12.6" height="11.6" rx="1.8"/><path d="M1.7 5.5h12.6M7 5.5v8.3"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace" id="workspace">
+      <div class="stage-wrap" id="stageWrap">
+        <div class="stage" id="stage">
+          <canvas id="viewport" width="900" height="640" tabindex="0" aria-label="Narvis sayfa görünümü — tıklayıp klavyeyle formları kullanın"></canvas>
+          <div class="selection" id="selection" hidden></div>
+          <div class="hover-ring" id="hoverRing" hidden></div>
+          <div class="scroll-rail" id="scrollRail"><div class="scroll-thumb" id="scrollThumb"></div></div>
+        </div>
+        <div class="stage-hint" id="stageHint">
+          <span class="hint-dot"></span>
+          Tıkla ve yaz · <kbd>Tab</kbd> ile gezin · <kbd>Enter</kbd> ile gönder · <kbd>Esc</kbd> ile çık
+        </div>
+      </div>
+
+      <aside class="editor-panel" id="editorPanel" hidden aria-label="Kaynak düzenleyici">
+        <header class="editor-head">
+          <div class="editor-file">
+            <span class="file-dot"></span>
+            <span id="editorFile">pages/demo.html</span>
+            <span class="file-tag">canlı</span>
+          </div>
+          <button class="icon-btn small" id="editorClose" type="button" title="Kapat (Esc)" aria-label="Kapat">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>
+          </button>
+        </header>
+        <textarea class="editor-code" id="editorText" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="HTML kaynağı"></textarea>
+        <footer class="editor-foot">
+          <button class="ghost-btn" id="editorReset" type="button" title="Son yüklenen kaynağa dön">Sıfırla</button>
+          <span class="editor-note">Değişiklikler yalnızca bellekte kalır.</span>
+          <button class="primary-btn" id="editorRun" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8 12.5 8l-8 5.2V2.8Z"/></svg>
+            Çalıştır <kbd>Ctrl Enter</kbd>
+          </button>
+        </footer>
+      </aside>
+    </main>
+
+    <section class="devtools" id="devtools" aria-label="Geliştirici araçları">
+      <header class="dt-head">
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab is-active" data-pane="dom" role="tab" aria-selected="true">DOM</button>
+          <button type="button" class="tab" data-pane="styles" role="tab" aria-selected="false">Stil</button>
+          <button type="button" class="tab" data-pane="console" role="tab" aria-selected="false">
+            Konsol <span class="tab-count" id="consoleCount">0</span>
+          </button>
+          <button type="button" class="tab" data-pane="info" role="tab" aria-selected="false">Bilgi</button>
+        </div>
+        <div class="dt-actions">
+          <span class="selection-label" id="selectionLabel">öğe seçilmedi</span>
+          <button class="ghost-btn small" id="clearConsole" type="button">Temizle</button>
+          <button class="icon-btn small" id="devtoolsClose" type="button" title="Paneli kapat" aria-label="Paneli kapat">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="dt-body">
+        <div class="pane dom-pane is-active" data-pane="dom" role="tabpanel">
+          <div class="dom-tree" id="domTree"></div>
+          <aside class="style-side">
+            <div class="box-model" id="boxModelSide" hidden></div>
+            <div class="side-head">
+              <span>Hesaplanmış stil</span>
+              <button class="link-btn" id="openStyleTab" type="button">tümünü aç</button>
+            </div>
+            <div class="style-list" id="styleList"></div>
+          </aside>
+        </div>
+
+        <div class="pane styles-pane" data-pane="styles" role="tabpanel">
+          <div class="style-toolbar">
+            <span class="style-element" id="styleElement">Bir öğe seçilmedi</span>
+            <input class="style-filter" id="styleFilter" type="text" placeholder="Özellik filtrele…" spellcheck="false" aria-label="Stil filtresi">
+          </div>
+          <div class="box-model" id="boxModelFull" hidden></div>
+          <div class="style-list wide" id="styleListFull"></div>
+        </div>
+
+        <div class="pane console-pane" data-pane="console" role="tabpanel">
+          <div class="console-list" id="consoleList"></div>
+          <form class="console-form" id="consoleForm">
+            <span class="prompt">›</span>
+            <input id="consoleInput" type="text" placeholder="JavaScript çalıştır… (ör. window.Narvis.engine.stats)" spellcheck="false" autocomplete="off" aria-label="Konsol girdisi">
+            <button class="ghost-btn small" type="submit">Çalıştır</button>
+          </form>
+        </div>
+
+        <div class="pane info-pane" data-pane="info" role="tabpanel">
+          <div class="info-grid">
+            <div class="stat"><span>DOM düğümü</span><strong id="infoNodes">—</strong></div>
+            <div class="stat"><span>Kutu</span><strong id="infoBoxes">—</strong></div>
+            <div class="stat"><span>Stil</span><strong id="infoStyle">—</strong></div>
+            <div class="stat"><span>Yerleşim</span><strong id="infoLayout">—</strong></div>
+            <div class="stat"><span>Boyama</span><strong id="infoPaint">—</strong></div>
+            <div class="stat"><span>Görünüm</span><strong id="infoViewport">—</strong></div>
+          </div>
+          <div class="info-columns">
+            <div class="info-block">
+              <h4>Desteklenen</h4>
+              <div class="chips">
+                <span>HTML ayrıştırma</span><span>CSS kaskadı</span><span>blok / inline</span>
+                <span>flexbox</span><span>mutlak konum</span><span>medya sorguları</span>
+                <span>gradyan</span><span>gölge</span><span>resim</span><span>script</span>
+              </div>
+            </div>
+            <div class="info-block muted-block">
+              <h4>Kapsam dışı</h4>
+              <div class="chips">
+                <span>grid</span><span>float</span><span>tablo yerleşimi</span>
+                <span>pseudo-element</span><span>ağ üzerinden CSS</span><span>form doğrulama</span>
+                <span>animasyon</span><span>sticky</span>
+              </div>
+            </div>
+          </div>
+          <p class="info-note">
+            Narvis sayfayı gerçek bir DOM'a ayrıştırır, kaskadı kendi seçici motoruyla hesaplar,
+            kutuları yerleştirir ve her şeyi tek bir Canvas 2D yüzeyine çizer.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="statusbar">
+      <div class="status-left">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Hazır</span>
+      </div>
+      <div class="status-page" id="statusPage">pages/demo.html</div>
+      <div class="status-right">
+        <span id="statusViewport">—</span>
+        <span class="divider-dot"></span>
+        <span id="statusScroll">0 / 0</span>
+        <span class="divider-dot"></span>
+        <span id="statusNodes">0 düğüm</span>
+        <span class="divider-dot"></span>
+        <span id="statusPaint">—</span>
+      </div>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="src/ui.js"></script>
+</body>
+</html>

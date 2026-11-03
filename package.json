@@ -1,0 +1,11 @@
+{
+  "name": "narvis",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Narvis - sifirdan yazilmis kucuk bir HTML/CSS/JS motoru",
+  "scripts": {
+    "start": "node serve.mjs",
+    "test": "node tests/run.mjs"
+  }
+}

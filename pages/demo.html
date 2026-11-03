@@ -1,0 +1,993 @@
+<!doctype html>
+<html>
+<head>
+  <title>Narvis — kendi motoruyla çizen tarayıcı</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    html { background-color: #f7f4ee; }
+    body {
+      margin: 0;
+      background-color: #f7f4ee;
+      color: #14161b;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background-color: #ffd9c9; }
+
+    a { color: #14161b; text-decoration: none; }
+    a:hover { color: #ff5a1f; }
+    p { margin: 0 0 18px; color: #555a64; }
+
+    .site-nav {
+      border-bottom: 1px solid #e6e0d5;
+      background-color: #f7f4ee;
+    }
+    .nav-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 36px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 19px;
+      letter-spacing: -0.3px;
+    }
+    .brand:hover { color: #14161b; }
+    .logo-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #ff7a45, #ff4d00);
+      color: #fff8f2;
+      font-family: Georgia, serif;
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 30px;
+      text-align: center;
+      letter-spacing: 0;
+    }
+    .links {
+      display: flex;
+      align-items: center;
+      gap: 26px;
+      font-size: 14px;
+      color: #555a64;
+      margin-left: 8px;
+    }
+    .links a { color: #555a64; }
+    .links a:hover { color: #ff5a1f; }
+    .nav-spacer { flex: 1; }
+
+    .btn {
+      display: inline-block;
+      padding: 11px 20px;
+      border-radius: 10px;
+      border: 1px solid #ddd6ca;
+      background-color: #fffdf9;
+      color: #14161b;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.2;
+      text-align: center;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: #c9c0b0; background-color: #fff; color: #14161b; }
+    .btn.primary {
+      background: linear-gradient(135deg, #ff6b35, #f04a0a);
+      border-color: #e0480c;
+      color: #fff9f5;
+      box-shadow: 0 8px 24px rgba(240, 74, 10, 0.22);
+    }
+    .btn.primary:hover {
+      background: linear-gradient(135deg, #ff7d4c, #ff5a1f);
+      border-color: #f0561a;
+      color: #fff;
+    }
+    .btn.dark {
+      background-color: #15171d;
+      border-color: #15171d;
+      color: #f7f4ee;
+    }
+    .btn.dark:hover { background-color: #242731; border-color: #242731; color: #fff; }
+    .btn.small { padding: 8px 14px; font-size: 13px; border-radius: 8px; }
+
+    .hero {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 84px 32px 40px;
+      text-align: center;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border: 1px solid #e2dbcf;
+      border-radius: 999px;
+      background-color: #fffdf8;
+      color: #6b6257;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+    .pulse {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background-color: #ff5a1f;
+      box-shadow: 0 0 0 4px rgba(255, 90, 31, 0.12);
+    }
+    h1 {
+      margin: 0 auto 24px;
+      max-width: 900px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 72px;
+      font-weight: 400;
+      line-height: 1.04;
+      letter-spacing: -2.4px;
+      color: #14161b;
+    }
+    h1 em {
+      font-style: italic;
+      color: #ff5a1f;
+    }
+    .lede {
+      max-width: 660px;
+      margin: 0 auto 34px;
+      font-size: 18px;
+      line-height: 1.7;
+      color: #5c616b;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 58px;
+    }
+    .stats {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 0;
+      border-top: 1px solid #e6e0d5;
+      border-bottom: 1px solid #e6e0d5;
+      padding: 22px 0;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .stats > div {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      border-right: 1px solid #e6e0d5;
+    }
+    .stats > div:last-child { border-right: 0; }
+    .stats strong {
+      font-family: Georgia, serif;
+      font-size: 30px;
+      font-weight: 400;
+      letter-spacing: -0.5px;
+      color: #14161b;
+    }
+    .stats span {
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #8a8175;
+    }
+
+    .section { max-width: 1120px; margin: 0 auto; padding: 70px 32px; }
+    .section-head { margin-bottom: 34px; }
+    .kicker {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #ff5a1f;
+      margin-bottom: 12px;
+    }
+    h2 {
+      margin: 0;
+      font-family: Georgia, serif;
+      font-size: 42px;
+      font-weight: 400;
+      line-height: 1.15;
+      letter-spacing: -1.2px;
+      color: #14161b;
+    }
+    .section-head p { max-width: 560px; margin: 14px 0 0; font-size: 16px; }
+
+    .code-card {
+      max-width: 880px;
+      margin: 0 auto;
+      border-radius: 18px;
+      background-color: #12151c;
+      border: 1px solid #242833;
+      box-shadow: 0 34px 70px rgba(30, 24, 15, 0.22);
+      overflow: hidden;
+    }
+    .code-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 18px;
+      border-bottom: 1px solid #222631;
+      background-color: #161a22;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 999px; }
+    .dot.red { background-color: #ff6b5e; }
+    .dot.yellow { background-color: #ffc14d; }
+    .dot.green { background-color: #5fce7d; }
+    .code-title {
+      margin-left: 8px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      color: #818a9c;
+    }
+    .code-body {
+      display: flex;
+      padding: 22px 0;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      font-size: 13.5px;
+      line-height: 1.75;
+    }
+    .gutter {
+      padding: 0 18px 0 24px;
+      color: #4d5566;
+      text-align: right;
+      user-select: none;
+      border-right: 1px solid #20242e;
+    }
+    pre {
+      margin: 0;
+      padding: 0 26px;
+      white-space: pre;
+      color: #d7dce5;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      background: none;
+    }
+    .tok-tag { color: #ff8a65; }
+    .tok-attr { color: #ffd166; }
+    .tok-str { color: #9fd98e; }
+    .tok-punct { color: #7d8798; }
+    .tok-comment { color: #6c7484; font-style: italic; }
+    .tok-key { color: #c792ea; }
+    .tok-num { color: #f78c6c; }
+    .tok-fn { color: #82aaff; }
+
+    .features { background-color: #f1ede5; border-top: 1px solid #e6e0d5; border-bottom: 1px solid #e6e0d5; }
+    .feature-grid { display: flex; gap: 16px; margin-bottom: 16px; }
+    .feature-grid:last-child { margin-bottom: 0; }
+    .card {
+      flex: 1;
+      padding: 26px 24px 24px;
+      border: 1px solid #e2dbcf;
+      border-radius: 16px;
+      background-color: #fffdf9;
+      box-shadow: 0 2px 0 rgba(20, 22, 27, 0.03);
+    }
+    .card:hover { border-color: #d3c8b6; box-shadow: 0 12px 30px rgba(60, 48, 30, 0.07); }
+    .icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, #ffb08a, #ff5a1f);
+      color: #fff;
+      font-family: Georgia, serif;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 38px;
+      text-align: center;
+      margin-bottom: 18px;
+    }
+    .icon.cool { background: linear-gradient(135deg, #9fc5ff, #4477e8); }
+    .icon.moss { background: linear-gradient(135deg, #bfe5a8, #5aa54a); }
+    .icon.plum { background: linear-gradient(135deg, #d9b8ff, #8a5bd6); }
+    .icon.sun { background: linear-gradient(135deg, #ffe08a, #e8a51d); }
+    .icon.ink { background: linear-gradient(135deg, #6b7280, #1f2430); }
+    .card h3 {
+      margin: 0 0 8px;
+      font-family: Georgia, serif;
+      font-size: 21px;
+      font-weight: 400;
+      letter-spacing: -0.3px;
+      color: #14161b;
+    }
+    .card p { margin: 0 0 16px; font-size: 14px; line-height: 1.65; color: #626772; }
+    .card code {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background-color: #f3efe7;
+      border: 1px solid #e8e1d5;
+      color: #8a4a28;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.4;
+    }
+
+    .pipeline { border-bottom: 1px solid #e6e0d5; }
+    .steps { display: flex; gap: 14px; }
+    .step {
+      flex: 1;
+      padding: 24px 22px;
+      border-top: 2px solid #e0d8ca;
+      position: relative;
+    }
+    .step:hover { border-top-color: #ff5a1f; }
+    .step-num {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 1px solid #ded6c8;
+      background-color: #fffdf9;
+      color: #8a8175;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      line-height: 26px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .step h3 { margin: 0 0 6px; font-size: 16px; font-weight: 650; letter-spacing: -0.2px; }
+    .step p { margin: 0; font-size: 13px; line-height: 1.6; color: #6b7079; }
+
+    .playground { padding-top: 20px; padding-bottom: 84px; }
+    .play-card {
+      display: flex;
+      align-items: center;
+      gap: 36px;
+      padding: 36px 40px;
+      border-radius: 20px;
+      background-color: #151820;
+      background: linear-gradient(135deg, #20242e, #12151c);
+      border: 1px solid #2b303c;
+      box-shadow: 0 30px 60px rgba(20, 18, 12, 0.18);
+    }
+    .play-copy { flex: 1; }
+    .play-card h2 { color: #f6f2ea; font-size: 34px; margin-bottom: 10px; }
+    .play-card p { color: #a5abba; font-size: 14.5px; max-width: 500px; margin: 0; }
+    .play-controls { display: flex; align-items: center; gap: 22px; }
+    .counter {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 88px;
+    }
+    .counter strong {
+      font-family: Georgia, serif;
+      font-size: 34px;
+      font-weight: 400;
+      color: #ffb08a;
+      line-height: 1.1;
+    }
+    .counter span {
+      font-size: 10px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #7e8596;
+    }
+    .event-log {
+      margin: 0;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background-color: #0e1015;
+      border: 1px solid #262b36;
+      color: #9fe6a0;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      width: 100%;
+    }
+    .play-log { margin-top: 18px; }
+
+    /* Tema galerisi: CSS degiskenleri + grid yerlesimi */
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      --tile-bg: #171b26;
+      --tile-text: #aab1c2;
+      --tile-accent: #ff6b35;
+    }
+    .tile {
+      background-color: var(--tile-bg);
+      border: 1px solid #262b36;
+      border-radius: 14px;
+      padding: 18px;
+      color: var(--tile-text);
+      font-size: 13px;
+    }
+    .tile h3 {
+      color: var(--tile-accent);
+      font-size: 15px;
+      margin: 0 0 6px;
+      font-weight: 600;
+    }
+    .tile strong { color: var(--tile-accent); }
+    .tile.wide { grid-column: span 2; }
+    .tile.cool { --tile-accent: #6bc9ff; }
+    .tile.teal { --tile-accent: #5dccae; }
+    .theme-actions { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+    .theme-label { font-size: 12px; color: #8a8175; }
+
+    /* Float akisi: damla kutu metnin etrafindan sarilir */
+    .float-flow {
+      display: block;
+      margin-top: 6px;
+    }
+    .float-quote {
+      float: left;
+      width: 220px;
+      margin: 4px 18px 10px 0;
+      padding: 14px 16px;
+      background-color: var(--tile-bg, #171b26);
+      color: var(--tile-text, #aab1c2);
+      border-left: 3px solid var(--tile-accent, #ff6b35);
+      border-radius: 0 12px 12px 0;
+      font-family: Georgia, serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .float-quote strong { color: var(--tile-accent, #ff6b35); }
+    .float-body { display: block; margin: 0; }
+    .float-body + .float-body { margin-top: 12px; }
+    .float-clear { clear: both; padding-top: 14px; }
+
+    /* Tablo: kolon dagilimi, satil ve header stili */
+    .tbl {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      font-size: 14px;
+      background-color: #faf8f4;
+    }
+    .tbl caption { text-align: left; color: #8a8175; font-size: 12px; padding-bottom: 8px; }
+    .tbl th, .tbl td { border-bottom: 1px solid #e5e1d8; padding: 7px 10px; text-align: left; }
+    .tbl th { color: #4a443c; }
+    .tbl tr:last-child td { border-bottom: 0; }
+
+    /* Pseudo-element: ::before/::after tırnakları */
+    .pseudo-quote { font-size: 17px; }
+    .pseudo-quote::before { content: '»'; color: #b3572b; font-weight: 700; margin-right: 6px; }
+    .pseudo-quote::after { content: '«'; color: #b3572b; font-weight: 700; margin-left: 6px; }
+
+    /* Form kontrolleri: tarayıcı benzeri görünüm, odak halkası */
+    .form-demo {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-top: 6px;
+    }
+    .form-card {
+      padding: 20px 22px;
+      background-color: #faf8f4;
+      border: 1px solid #e5e1d8;
+      border-radius: 14px;
+    }
+    .form-card h3 { margin: 0 0 16px; font-size: 17px; }
+    .field { display: block; margin-bottom: 12px; }
+    .field-label {
+      display: block;
+      margin-bottom: 5px;
+      color: #8a8175;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+    }
+    .form-input, .form-textarea, .form-select { width: 100%; font-family: inherit; }
+    .form-select { font-size: 14px; }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 9px;
+      color: #4a443c;
+      font-size: 14px;
+    }
+    .check-row input { flex-shrink: 0; }
+    .form-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+    .form-actions input, .form-actions button { cursor: pointer; }
+    .form-note { margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: #8a8175; }
+
+    footer {
+      border-top: 1px solid #e6e0d5;
+      padding: 30px 32px;
+    }
+    .foot-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      color: #8a8175;
+      font-size: 12.5px;
+    }
+    .foot-links { display: flex; gap: 18px; }
+    .foot-links a { color: #8a8175; }
+    .foot-links a:hover { color: #ff5a1f; }
+
+    @media (max-width: 900px) {
+      h1 { font-size: 56px; letter-spacing: -1.6px; }
+      .nav-inner { padding: 16px 20px; gap: 20px; }
+      .links { display: none; }
+      .hero { padding: 64px 20px 32px; }
+      .section { padding: 54px 20px; }
+      .feature-grid { flex-direction: column; }
+      .steps { flex-direction: column; gap: 0; }
+      .step { border-top: 1px solid #e6e0d5; }
+      .play-card { flex-direction: column; align-items: flex-start; gap: 24px; padding: 28px; }
+      .play-controls { width: 100%; justify-content: space-between; }
+      .foot-inner { flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 620px) {
+      h1 { font-size: 42px; letter-spacing: -1px; }
+      .lede { font-size: 16px; }
+      .stats strong { font-size: 24px; }
+      .stats span { font-size: 9px; }
+      .hero-actions { flex-direction: column; }
+      .hero-actions .btn { width: 100%; }
+      .code-body { font-size: 11.5px; }
+      .code-title { display: none; }
+      h2 { font-size: 32px; }
+      .play-controls { flex-direction: column; align-items: flex-start; }
+      .play-controls .btn { width: 100%; }
+      .theme-grid { grid-template-columns: repeat(1, 1fr); }
+      .tile.wide { grid-column: span 1; }
+      .form-demo { grid-template-columns: 1fr; }
+      .float-quote { float: none; width: auto; margin: 0 0 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-nav">
+    <div class="nav-inner">
+      <a class="brand" href="#top">
+        <span class="logo-mark">N</span>
+        <span>Narvis</span>
+      </a>
+      <nav class="links">
+        <a href="#features">Yetenekler</a>
+        <a href="#forms">Formlar</a>
+        <a href="#pipeline">Nasıl çalışır</a>
+        <a href="about.html">Hakkında</a>
+      </nav>
+      <div class="nav-spacer"></div>
+      <button class="btn dark small" id="sourceOpen">Kaynağı gör</button>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="eyebrow"><span class="pulse"></span> sürüm 0.1 · sıfırdan yazıldı</div>
+      <h1>Web sayfalarını<br>kendi motoruyla<br><em>çizen</em> küçük bir tarayıcı.</h1>
+      <p class="lede">Narvis; HTML'i ayrıştırır, CSS'i kaskadlar, kutuları dizer ve her şeyi Canvas üzerine çizer. Hazır bir çekirdek ya da layout kütüphanesi yok — yalnızca JavaScript.</p>
+      <div class="hero-actions">
+        <button class="btn primary" id="paintBtn">Bir kez daha çiz</button>
+        <a class="btn" href="about.html">Mimariyi oku →</a>
+      </div>
+      <div class="stats">
+        <div><strong id="statNodes">—</strong><span>DOM düğümü</span></div>
+        <div><strong>0</strong><span>harici bağımlılık</span></div>
+        <div><strong id="statPaint">—</strong><span>son çizim</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="code-card">
+        <div class="code-head">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <span class="code-title">narvis / motor.js</span>
+        </div>
+        <div class="code-body">
+          <div class="gutter">1
+2
+3
+4
+5
+6
+7
+8</div>
+          <pre><span class="tok-comment">// Narvis'in tüm hattı: HTML → DOM → CSS → kutu → piksel</span>
+<span class="tok-key">const</span> dom  = <span class="tok-fn">parseDocument</span>(html);
+<span class="tok-key">const</span> stil = <span class="tok-fn">computeStyles</span>(dom, viewport);
+<span class="tok-key">const</span> kutu = <span class="tok-fn">layoutDocument</span>(dom, stil);
+<span class="tok-fn">paintDocument</span>(ctx, kutu);
+
+<span class="tok-comment">// Geri kalan her şey: seçici eşleme, kaskad, flex ve canvas.</span>
+<span class="tok-fn">requestAnimationFrame</span>(<span class="tok-key">function</span> () {
+  <span class="tok-fn">tekrarCiz</span>(); <span class="tok-comment">// düğüm değişince yeni kare</span>
+});</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="section">
+        <div class="section-head">
+          <span class="kicker">Yetenekler</span>
+          <h2>Bir tarayıcının işini<br>parçalara ayırdık.</h2>
+          <p>Her katman ayrı bir modül. Hepsi aynı sayfada, aynı JavaScript çalışma zamanında.</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="card">
+            <div class="icon">H</div>
+            <h3>HTML ayrıştırma</h3>
+            <p>Tokenizer, ağaç kurucu, boşluk elemanları, ham metin blokları ve örtük kapanışlar.</p>
+            <code>&lt;div class="kutu"&gt;</code>
+          </article>
+          <article class="card">
+            <div class="icon cool">C</div>
+            <h3>CSS kaskadı</h3>
+            <p>Seçici özgüllüğü, miras, satır içi stiller, medya sorguları, `--değişken`/`var()` desteği ve kısa yazımlar.</p>
+            <code>var(--accent)</code>
+          </article>
+          <article class="card">
+            <div class="icon moss">L</div>
+            <h3>Kutu yerleşimi</h3>
+            <p>Blok akışı, satır kırma, float etrafında sarma, flex satırları, grid izleri ve mutlak konumlandırma.</p>
+            <code>margin: auto</code>
+          </article>
+        </div>
+        <div class="feature-grid">
+          <article class="card">
+            <div class="icon plum">P</div>
+            <h3>Canvas boyama</h3>
+            <p>Yuvarlak köşeler, gradyanlar, gölgeler, kenarlıklar, resimler ve metin süslemeleri.</p>
+            <code>border-radius: 18px</code>
+          </article>
+          <article class="card">
+            <div class="icon sun">JS</div>
+            <h3>Script çalıştırma</h3>
+            <p>Kum havuzunda çalışan script'ler; DOM güncellemesi otomatik reflow tetikler.</p>
+            <code>addEventListener</code>
+          </article>
+          <article class="card">
+            <div class="icon ink">E</div>
+            <h3>Olay yönlendirme</h3>
+            <p>Canvas üzerindeki tıklamalar DOM'a iletilir; `:hover` ve odak durumları yeniden çizilir.</p>
+            <code>click</code>
+          </article>
+        </div>
+        <div class="feature-grid">
+          <article class="card">
+            <div class="icon moss">G</div>
+            <h3>Değişkenler &amp; grid</h3>
+            <p>`--degisken` tanımlar, `var(...)` ikamelikleri ve grid iz yerleşimi (fr, %, px, yazım: span) destekli.</p>
+            <code>var(--accent)</code>
+          </article>
+          <article class="card" style="grid-column: span 2">
+            <div class="icon sun">§</div>
+            <h3>Aşağıdaki galeri bunların canlı örneği</h3>
+            <p>Tema galerisinde her kart CSS değişkenlerinden rengini alır; grid yerleşimi 3 kolonluk iz yerleşiminden gelir.</p>
+            <code>grid-template-columns: repeat(3, 1fr)</code>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="theme">
+      <div class="section-head">
+        <span class="kicker">Temalar</span>
+        <h2>Değişken tek harmoniden geçer.</h2>
+        <p>Galerinin rengi üç custom property'den gelir. Düğmeye bas: JS runtime'ı <code>setProperty('--tile-…')</code> yazar, motor değişkeni yeni hesaplar, grid yeniden boyanır.</p>
+      </div>
+      <div class="theme-grid" id="tileGallery">
+        <div class="tile wide">
+          <h3>Jezve</h3>
+          <p>Kartlar <strong>var(--tile-bg)</strong> ile arka plan, <strong>var(--tile-text)</strong> ile metin rengi alır. Tek yerden tema.</p>
+        </div>
+        <div class="tile cool">
+          <h3>Fırtına</h3>
+          <p>Aksan rengi her kartta ayrıca delinir: <strong>--tile-accent</strong>.</p>
+        </div>
+        <div class="tile teal">
+          <h3>Deniz</h3>
+          <p>Grid izleri <strong>repeat(3, 1fr)</strong>; geniş kart <strong>span 2</strong>.</p>
+        </div>
+        <div class="tile">
+          <h3>Kömür</h3>
+          <p>Koyu tema kartları tek <strong>--tile-bg</strong> ile aynı anda değişir.</p>
+        </div>
+      </div>
+      <div class="theme-actions">
+        <button class="btn primary" id="themeBtn">Temayı çevir</button>
+        <span class="theme-label" id="themeLabel">tema: jezve</span>
+      </div>
+    </section>
+
+    <section class="section" id="float">
+      <div class="section-head">
+        <span class="kicker">Akış</span>
+        <h2>Metin, yüzen kutunun etrafında dolaşır.</h2>
+        <p>Aşağıdaki damla kutu <code>float: left</code> ile sola yapışmış; paragraflar satır satır onun sağından akar, band bitince tam genişliğe döner. <code>clear: both</code> kapanıştaki ayraç bu bandın altına iner.</p>
+      </div>
+      <div class="float-flow">
+        <div class="float-quote">
+          <strong>Damla</strong> — float: left ile akışın kenarına çakılmış bir alıntı kutusu. Yazı, satır satır etrafından sarılır.
+        </div>
+        <p class="float-body">Narvis'te float desteği, yüzme bölgesi denen küçük bir kayıt üzerinden çalışır: her BFC kendi bölgesini açar, yüzen kutular margin-box dikdörtgenleri olarak kaydedilir ve satır kutuları her yeni satırda bu bölgeden inset ister. Böylece ardışık satırlar aynı bandı doğru paylaşıp boşluktan çıkmaz.</p>
+        <p class="float-body">oldukça uzatılabilir: <strong>clear</strong> desteğiyle bloklar yüzenlerin altına inebilir; <strong>shrink-to-fit</strong> genişlikleri uygulanır; satır içi img'ler ve blok kutuları aynı bölgeyi kullanır. Flex ve grid öğelerinde float yok sayılır — spec'in kendi uyarısı.</p>
+        <div class="float-clear"><code>clear: both</code> uygulayan bu satır, yüzen bandın altından başlar.</div>
+      </div>
+    </section>
+
+    <section class="section" id="tables">
+      <div class="section-head">
+        <span class="kicker">Yapı</span>
+        <h2>Tablolar, gerçek tablo modeliyle.</h2>
+        <p>Eksik <code>tbody</code> üretilir, <code>colspan</code>/<code>rowspan</code> matrisi doldurulur, kolonlar min/max içerik ölçüsüne göre paylaşılır ve <code>border-spacing</code> uygulanır.</p>
+      </div>
+      <table class="tbl">
+        <caption>örnek: kulüplere göre tablo</caption>
+        <tr><th>Paket</th><th>Denklem</th><th>Süreç</th></tr>
+        <tr><td>Ayrıştırma</td><td>tokenizasyon → ağaç imalinde foster parenting</td><td><code>html/parser.js</code></td></tr>
+        <tr><td>Adlandırma</td><td>kaskad, özgüllük, <code>var()</code> ikamesi</td><td><code>css/*</code> + <code>style.js</code></td></tr>
+        <tr><td>Yerleşim</td><td>blok / inline / float / flex / grid / tablo</td><td><code>layout.js</code></td></tr>
+        <tr><td colspan="2">Boyama (canvas)</td><td><code>paint.js</code></td></tr>
+      </table>
+    </section>
+
+    <section class="section" id="pseudo">
+      <div class="section-head">
+        <span class="kicker">İçerik</span>
+        <h2>Pseudo-elementler, kaskaddan doğar.</h2>
+        <p><code>::before</code> ve <code>::after</code> yalnızca <code>content</code> bildirimiyle metin üretir — satır içi akışa girer, <code>var()</code> ile çözülür ve özgüllükle kazanır.</p>
+      </div>
+      <p class="pseudo-quote">Narvis'in ürettiği bu tırnaklar DOM düğümü değil; kaskadın çıktısı.</p>
+    </section>
+
+    <section class="section" id="forms">
+      <div class="section-head">
+        <span class="kicker">Etkileşim</span>
+        <h2>Form kontrolleri, gerçek girdiyle.</h2>
+        <p>Metin kutusuna tıklayıp yaz, <code>Tab</code> ile gez, <code>Enter</code> ile gönder. Select listesi Canvas üzerinde açılır; zorunlu alanlar boşken doğrulama balonu çıkar. Geçerli form gerçek bir POST isteğiyle sunucuya gider.</p>
+      </div>
+      <form class="form-demo" id="demoForm" action="form-result.html" method="post">
+        <div class="form-card">
+          <h3>Hesap</h3>
+          <label class="field">
+            <span class="field-label">Ad soyad</span>
+            <input class="form-input" id="demoName" name="ad" type="text" placeholder="Ad soyad" required minlength="2">
+          </label>
+          <label class="field">
+            <span class="field-label">E-posta</span>
+            <input class="form-input" id="demoMail" name="eposta" type="email" placeholder="ornek@narvis.dev" required>
+          </label>
+          <label class="field">
+            <span class="field-label">Konu</span>
+            <select class="form-select" id="demoSubject" name="konu" required>
+              <option value="">Konu seçin…</option>
+              <option value="genel">Genel soru</option>
+              <option value="hata">Hata bildirimi</option>
+              <option value="oneri">Öneri</option>
+              <option value="isbirligi">İş birliği</option>
+            </select>
+          </label>
+          <div class="field">
+            <span class="field-label">Kısa not</span>
+            <textarea class="form-textarea" id="demoAbout" name="mesaj" rows="3" cols="30" maxlength="280" placeholder="Birkaç satır…"></textarea>
+          </div>
+          <div class="form-actions">
+            <input type="submit" value="Gönder">
+            <input type="reset" value="Sıfırla">
+            <button type="button" id="fillForm">Örnek doldur</button>
+          </div>
+        </div>
+        <div class="form-card">
+          <h3>Tercihler</h3>
+          <label class="check-row"><input type="checkbox" id="demoNews" name="bulten" value="evet"> Bültene abone ol</label>
+          <label class="check-row"><input type="checkbox" name="guncelleme" value="evet" checked> Güncellemeleri bildir</label>
+          <div class="field-label" style="margin-top: 18px">Plan</div>
+          <label class="check-row"><input type="radio" id="planAylik" name="plan" value="aylik"> Aylık</label>
+          <label class="check-row"><input type="radio" id="planYillik" name="plan" value="yillik" checked> Yıllık</label>
+          <label class="check-row"><input type="radio" id="planOmur" name="plan" value="omur"> Ömür boyu</label>
+          <label class="field" style="margin-top: 14px">
+            <span class="field-label">Narvis'i nasıl buldunuz?</span>
+            <select class="form-select" id="demoFound" name="deneyim">
+              <option value="arama">Arama motoru</option>
+              <option value="arkadas">Bir arkadaş</option>
+              <option value="sosyal" selected>Sosyal medya</option>
+              <option value="diger">Diğer</option>
+            </select>
+          </label>
+          <label class="field" style="margin-top: 14px">
+            <span class="field-label">Seçim</span>
+            <input class="form-input" id="planOut" type="text" value="plan: yıllık" readonly>
+          </label>
+          <p class="form-note">Zorunlu alan boşsa gönderim durur ve ilk geçersiz alan odaklanır. Select'i <strong>Space</strong>/<strong>Enter</strong> ile aç, oklarla gez, <strong>Enter</strong> ile seç. Form geçerliyse yanıt sunucudan gelir ve yeniden çizilir.</p>
+        </div>
+      </form>
+    </section>
+
+    <section class="section pipeline" id="pipeline">
+      <div class="section-head">
+        <span class="kicker">Boru hattı</span>
+        <h2>Dört adımda piksel.</h2>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <h3>Ayrıştır</h3>
+          <p>HTML tokenizer'ı etiketleri, yorumları ve ham metni ayırır; ağaç kurucu DOM'u oluşturur.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <h3>Hesapla</h3>
+          <p>Her eleman için eşleşen kurallar toplanır; özgüllük ve sıraya göre nihai stil seçilir.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <h3>Yerleştir</h3>
+          <p>Bloklar dikey akar, satırlar kelime kelime kırılır, flex eksenleri paylaştırılır.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <h3>Çiz</h3>
+          <p>Her kutu Canvas'a boyanır: arka plan, kenarlık, metin ve gölge. Sonuç bir piksel haritası.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section playground">
+      <div class="play-card">
+        <div class="play-copy">
+          <h2>Motoru canlı dene.</h2>
+          <p>Butona bas. DOM güncellensin, stiller yeniden hesaplansın, kutular yeniden yerleşsin ve sayfa tekrar çizilsin.</p>
+          <div class="play-log">
+            <p class="event-log" id="eventLog">Hazır. Bir tıklama bekleniyor…</p>
+          </div>
+        </div>
+        <div class="play-controls">
+          <button class="btn primary" id="runBtn">Reflow tetikle</button>
+          <div class="counter"><strong id="runCount">0</strong><span>çalıştırma</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="foot-inner">
+      <div>© 2026 Narvis — küçük ama gerçek bir HTML/JS motoru.</div>
+      <div class="foot-links">
+        <a href="about.html">Mimari</a>
+        <a href="#features">Yetenekler</a>
+        <a href="#top">Başa dön ↑</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    var runs = 0;
+    var runBtn = document.getElementById('runBtn');
+    var paintBtn = document.getElementById('paintBtn');
+    var runCount = document.getElementById('runCount');
+    var eventLog = document.getElementById('eventLog');
+    var statNodes = document.getElementById('statNodes');
+    var statPaint = document.getElementById('statPaint');
+    var sourceOpen = document.getElementById('sourceOpen');
+
+    function say(message) {
+      eventLog.textContent = message;
+      var engine = window.Narvis.engine;
+      statNodes.textContent = engine.stats.nodes;
+      statPaint.textContent = engine.stats.paint.toFixed(1) + ' ms';
+    }
+
+    paintBtn.addEventListener('click', function () {
+      runs = runs + 1;
+      runCount.textContent = runs;
+      say('#' + runs + ' — stiller, kutular ve pikseller yeniden üretildi.');
+      window.scrollTo({ top: 0 });
+    });
+
+    runBtn.addEventListener('click', function () {
+      runs = runs + 1;
+      runCount.textContent = runs;
+      var engine = window.Narvis.engine;
+      say('#' + runs + ' — reflow tamamlandı · layout ' + engine.stats.layout.toFixed(1) + ' ms · ' + engine.stats.boxes + ' kutu.');
+      paintBtn.textContent = 'Tekrar çiz (' + runs + ')';
+    });
+
+    sourceOpen.addEventListener('click', function () {
+      if (window.Narvis.engine.openEditor) window.Narvis.engine.openEditor();
+    });
+
+    var fillForm = document.getElementById('fillForm');
+    var demoForm = document.getElementById('demoForm');
+    var planOut = document.getElementById('planOut');
+
+    function setPlan(label) {
+      planOut.value = 'plan: ' + label;
+    }
+    document.getElementById('planAylik').addEventListener('click', function () { setPlan('aylık'); });
+    document.getElementById('planYillik').addEventListener('click', function () { setPlan('yıllık'); });
+    document.getElementById('planOmur').addEventListener('click', function () { setPlan('ömür boyu'); });
+
+    var demoSubject = document.getElementById('demoSubject');
+    var demoFound = document.getElementById('demoFound');
+
+    fillForm.addEventListener('click', function () {
+      document.getElementById('demoName').value = 'Murat K.';
+      document.getElementById('demoMail').value = 'merhaba@narvis.dev';
+      document.getElementById('demoAbout').value = 'Narvis form kontrolü denemesi…';
+      demoSubject.value = 'oneri';
+      demoFound.value = 'sosyal';
+      document.getElementById('demoNews').checked = true;
+      document.getElementById('planAylik').checked = false;
+      document.getElementById('planYillik').checked = true;
+      document.getElementById('planOmur').checked = false;
+      planOut.value = 'plan: yıllık';
+      runs = runs + 1;
+      runCount.textContent = runs;
+      say('#' + runs + ' — form değerleri JS ile yazıldı; metin, select ve canvas yeniden çizildi.');
+    });
+
+    demoForm.addEventListener('input', function (event) {
+      var target = event.target || {};
+      if (target.id === 'demoName' || target.id === 'demoMail') {
+        say('girdi: ' + target.value + (target.validationMessage ? ' · ' + target.validationMessage : ''));
+      }
+    });
+
+    demoForm.addEventListener('submit', function () {
+      runs = runs + 1;
+      runCount.textContent = runs;
+      var ad = document.getElementById('demoName').value;
+      say('#' + runs + ' — doğrulama geçti, POST gönderiliyor: ' + (ad || '(boş)') + ' · ' + planOut.value);
+    });
+
+    var palettes = [
+      { ad: 'jezve', bg: '#171b26', metin: '#aab1c2', aksan: '#ff6b35' },
+      { ad: 'orman', bg: '#10201c', metin: '#9fd6c4', aksan: '#5dccae' },
+      { ad: 'gunbatimi', bg: '#241420', metin: '#f0c9c2', aksan: '#ff8f6b' },
+      { ad: 'deniz', bg: '#101b2c', metin: '#a9c6f2', aksan: '#6bc9ff' }
+    ];
+    var palet = 0;
+    var themeBtn = document.getElementById('themeBtn');
+    var themeLabel = document.getElementById('themeLabel');
+    var gallery = document.getElementById('tileGallery');
+
+    themeBtn.addEventListener('click', function () {
+      palet = (palet + 1) % palettes.length;
+      var renk = palettes[palet];
+      gallery.style.setProperty('--tile-bg', renk.bg);
+      gallery.style.setProperty('--tile-text', renk.metin);
+      gallery.style.setProperty('--tile-accent', renk.aksan);
+      themeLabel.textContent = 'tema: ' + renk.ad;
+      runs = runs + 1;
+      runCount.textContent = runs;
+      say('#' + runs + ' — ' + renk.ad + ' teması: üç custom property güncellendi, grid yeniden boyandı.');
+    });
+
+    setTimeout(function () {
+      var engine = window.Narvis.engine;
+      statNodes.textContent = engine.stats.nodes;
+      statPaint.textContent = engine.stats.paint.toFixed(1) + ' ms';
+    }, 60);
+  </script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!doctype html>
+<html>
+<head>
+  <title>Narvis — mimari notları</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background-color: #f7f4ee;
+      color: #14161b;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    a { color: #d9480f; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .topbar {
+      border-bottom: 1px solid #e6e0d5;
+      background-color: #f7f4ee;
+    }
+    .topbar-inner {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 18px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #ff7a45, #ff4d00);
+      color: #fff;
+      font-family: Georgia, serif;
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 28px;
+      text-align: center;
+    }
+    .topbar a.home { font-weight: 700; color: #14161b; }
+    .topbar .spacer { flex: 1; }
+    .topbar .back { font-size: 13px; color: #6b6257; }
+
+    .page { max-width: 820px; margin: 0 auto; padding: 64px 28px 90px; }
+    .kicker {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #ff5a1f;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0 0 22px;
+      font-family: Georgia, serif;
+      font-size: 58px;
+      font-weight: 400;
+      line-height: 1.08;
+      letter-spacing: -1.8px;
+    }
+    .intro {
+      font-size: 19px;
+      line-height: 1.7;
+      color: #555a64;
+      margin: 0 0 40px;
+    }
+    h2 {
+      margin: 46px 0 14px;
+      font-family: Georgia, serif;
+      font-size: 30px;
+      font-weight: 400;
+      letter-spacing: -0.6px;
+    }
+    h3 { margin: 28px 0 8px; font-size: 17px; }
+    p { margin: 0 0 16px; color: #4f5560; }
+    ul, ol { margin: 0 0 20px; padding-left: 24px; color: #4f5560; }
+    li { margin: 6px 0; }
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background-color: #efe9df;
+      border: 1px solid #e2dbcf;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.86em;
+      color: #9a3d12;
+    }
+    pre {
+      margin: 20px 0 26px;
+      padding: 20px 22px;
+      border-radius: 14px;
+      background-color: #14171f;
+      border: 1px solid #262b36;
+      color: #d7dce5;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    pre code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+    blockquote {
+      margin: 24px 0;
+      padding: 4px 0 4px 20px;
+      border-left: 3px solid #ffb08a;
+      color: #6b6257;
+      font-size: 17px;
+    }
+    .callout {
+      padding: 20px 22px;
+      border-radius: 14px;
+      border: 1px solid #e2dbcf;
+      background-color: #fffdf9;
+      margin: 26px 0;
+    }
+    .callout strong { color: #14161b; }
+    .grid2 { display: flex; gap: 16px; margin: 22px 0 26px; }
+    .mini {
+      flex: 1;
+      padding: 18px 20px;
+      border: 1px solid #e2dbcf;
+      border-radius: 12px;
+      background-color: #fffdf9;
+    }
+    .mini strong { display: block; margin-bottom: 4px; font-size: 14px; }
+    .mini span { font-size: 13px; color: #6b7079; line-height: 1.55; }
+    .divider { height: 1px; background-color: #e6e0d5; margin: 44px 0; }
+    .foot { font-size: 13px; color: #8a8175; }
+    .foot a { color: #8a8175; }
+    @media (max-width: 700px) {
+      h1 { font-size: 40px; }
+      .page { padding: 44px 20px 64px; }
+      .grid2 { flex-direction: column; }
+      pre { font-size: 11.5px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="mark">N</div>
+      <a class="home" href="demo.html">Narvis</a>
+      <div class="spacer"></div>
+      <a class="back" href="demo.html">← demoya dön</a>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="kicker">Mimari notları</div>
+    <h1>Tarayıcıyı<br>yeniden yazmak.</h1>
+    <p class="intro">Narvis, bir HTML sayfasını alıp piksellere dönüştüren küçük bir motor. Bu sayfa da Narvis tarafından çiziliyor; yani okuduğun her satır kendi layout motorumuzdan geçti.</p>
+
+    <h2>Neden sıfırdan?</h2>
+    <p>Bir tarayıcıyı anlamanın en iyi yolu, küçük bir tane yazmak. Narvis'te DOM, CSS kaskadı, kutu modeli ve boyama katmanları ayrı modüller. Hiçbirinde hazır bir çözümleyici ya da render kütüphanesi yok.</p>
+    <div class="grid2">
+      <div class="mini"><strong>Girdi</strong><span>Bir HTML metni, satır içi stil etiketleri ve küçük bir script bloğu.</span></div>
+      <div class="mini"><strong>Çıktı</strong><span>Canvas üzerinde çizilmiş bir sayfa, tıklanabilir düğümler ve ölçüm istatistikleri.</span></div>
+    </div>
+
+    <h2>Boru hattı</h2>
+    <p>Her kare dört aşamadan geçiyor. Bir düğüm değiştiğinde motor yalnızca bir sonraki <code>requestAnimationFrame</code> karesinde yeniden hesaplıyor.</p>
+    <pre><code>HTML metni
+   ↓  tokenizer + ağaç kurucu
+DOM
+   ↓  seçici eşleme + kaskad (var())
+hesaplanmış stiller
+   ↓  blok / inline / float / flex / grid / tablo yerleşim
+kutu ağacı
+   ↓  canvas 2D
+pikseller</code></pre>
+
+    <h3>1. HTML ayrıştırma</h3>
+    <p>Tokenizer; başlangıç ve bitiş etiketlerini, öznitelikleri, yorumları ve ham metin bloklarını ayırır. Ağaç kurucu boş elemanları (<code>br</code>, <code>img</code>, <code>hr</code>) ve örtük kapanışları yönetir.</p>
+
+    <h3>2. CSS kaskadı</h3>
+    <p>Her eleman için eşleşen kurallar toplanır. Kazanan bildirim; <code>!important</code>, satır içi stil, özgüllük ve kaynak sırasına göre belirlenir. Kısa yazımlar (<code>margin</code>, <code>font</code>, <code>flex</code>) uzun özelliklere açılır. <code>--değişken</code> tanımları devralınır; <code>var(--ad, yedek)</code> hesaplama anında yerini alır.</p>
+
+    <blockquote>Seçici motoru <code>:not()</code>, <code>:is()</code>, <code>:nth-child()</code> ve komşu kardeş birleştiricilerini destekler.</blockquote>
+
+    <h3>3. Yerleşim</h3>
+    <p>Bloklar dikey akar; metin kelime kelime ölçülür ve satırlara bölünür. Float kutular bir "yüzme bölgesi"ne kaydedilir ve her satır bu bölgeden inset ister — metin, yüzenlerin etrafından sarar; <code>clear</code> blokları bandın altına indirir. Tablolarda eksik <code>tbody</code> üretilir, <code>colspan</code>/<code>rowspan</code> matrisiyle kolonlar min/max içerik ölçüsüne göre paylaşılır. Flex konteynerlerde büyüme, küçülme, boşluk dağıtımı ve çapraz eksen hizalaması uygulanır. Grid konteynerlerde <code>repeat()</code>, <code>fr</code>, iz boşlukları ve <code>span</code> taşımalı yerleşim çalışır. Yüzdeler, <code>em</code> ve <code>rem</code> değerleri kullanım anında çözülür.</p>
+
+    <h3>4. Boyama</h3>
+    <p>Arka planlar, yuvarlak köşeler, kenarlıklar, gradyanlar, gölgeler, resimler ve metinler Canvas 2D ile çizilir. Satır içi elemanların arka planları satır parçalarından birleştirilir.</p>
+
+    <h3>5. Formlar ve ağ</h3>
+    <p>Form kontrolleri Canvas üzerinde çizilir; tıklama ve klavye olayları DOM'a iletilir. Metin kutularına yazılır, imleç ve seçim yönetilir, <code>Tab</code> odak sırasını, <code>Enter</code> gönderimi tetikler. <code>select</code> seçenekleri motorun kendi açılır katmanında listelenir; ok tuşları, typeahead ve fareyle seçim çalışır.</p>
+    <p>Göndermeden önce kısıt doğrulaması çalışır: <code>required</code>, e-posta/URL/sayı tipi, <code>pattern</code>, uzunluk ve sayı aralığı denetlenir. İlk geçersiz kontrol odaklanır ve Türkçe bir doğrulama balonu çizilir. Geçerli form, <code>action</code>/<code>method</code>/<code>enctype</code> bilgisiyle gerçek bir <code>fetch</code> isteğine dönüşür; sunucudan dönen HTML yeni belge olarak yüklenir ve gezinme geçmişine yazılır.</p>
+
+    <div class="callout">
+      <strong>Kapsam dürüstçe:</strong> Narvis bir üretim tarayıcısı değil. <code>table-layout: fixed</code>, animasyon, harici stil/script yükleme, dosya yükleme, çoklu <code>select</code> listesi ve IME kompozisyonu yok; <code>::before</code>/<code>::after</code> yalnızca <code>content</code> metnini üretir (<code>counter()</code>/<code>attr()</code> yok). Ama gerçek bir motorun omurgası burada: ayrıştırma, kaskad, değişkenler, kutu modeli, tablolar (collapse + col genişlikleri dahil), form kontrolleri (klavye, select, doğrulama, gerçek ağ gönderimi), pseudo-elementler ve boyama.
+    </div>
+
+    <div class="divider"></div>
+
+    <h2>Denemek için</h2>
+    <ul>
+      <li>Üst çubuktaki <strong>Kaynak</strong> düğmesiyle bu sayfanın HTML'ini aç ve değiştir.</li>
+      <li>Butonlara tıkla; olaylar DOM'a iletilir ve sayfa yeniden çizilir.</li>
+      <li>Demo formunu klavyeyle doldur; boş göndererek doğrulama balonunu, geçerli göndererek sunucu yanıtını gör.</li>
+      <li>Pencereyi daralt; medya sorguları devreye girsin.</li>
+      <li>Geliştirici panelinden DOM ağacını ve hesaplanmış stilleri incele.</li>
+    </ul>
+    <p><a href="demo.html">← demo sayfasına dön</a></p>
+
+    <p class="foot">Narvis 0.1 · tek bir Canvas, dört modül ve bolca merak.</p>
+  </main>
+</body>
+</html>

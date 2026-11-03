@@ -1,0 +1,7 @@
+# Harici bağımlılıklar ve kurulum çıktıları depoya girmez (diskte aynen kalır)
+deps/
+vs-install.log
+
+# Node çıktıları
+node_modules/
+npm-debug.log*
