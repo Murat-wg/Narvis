@@ -413,7 +413,7 @@ canvas.addEventListener('click', (event) => {
     return;
   }
 
-  const el = engine.click(point.x, point.y, { shiftKey: event.shiftKey });
+  const el = engine.click(point.x, point.y, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey });
   const anchor = el?.closest?.('a[href]');
   if (anchor) {
     const href = anchor.getAttribute('href');

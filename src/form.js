@@ -87,12 +87,29 @@ export function selectedOptionIndexes(select) {
   const options = optionElements(select);
   if (!options.length) return [];
   if (select.hasAttribute('multiple')) {
+    /* _selected null/undefined ise nitelik baslangic secimini verir;
+       motor bir kez secim yazinca yalnizca _selected sayilir. */
     return options
-      .map((option, index) => (option.hasAttribute('selected') || option._selected ? index : -1))
+      .map((option, index) => ((option._selected ?? option.hasAttribute('selected')) ? index : -1))
       .filter((index) => index >= 0);
   }
   const index = selectedOptionIndex(select);
   return index >= 0 ? [index] : [];
+}
+
+/* select[multiple]: satir yuksekligi ve gorunen satir sayisi (size niteligi). */
+export function multiSelectRowHeight(select) {
+  const fs = select?._style?.fontSize || 16;
+  const lh = typeof select?._style?.lineHeight === 'number' && select._style.lineHeight > 0
+    ? select._style.lineHeight : fs * 1.4;
+  return lh;
+}
+
+export function multiSelectRows(select) {
+  const size = parseInt(select?.getAttribute?.('size'), 10);
+  const requested = Number.isFinite(size) && size > 0 ? Math.min(size, 99) : 4;
+  const count = optionElements(select).length;
+  return Math.max(1, Math.min(requested, count || requested));
 }
 
 /* Canli form verisi: basarili kontroller sirasiyla [ad, deger] ciftleri.

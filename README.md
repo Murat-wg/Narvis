@@ -90,8 +90,13 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
 - `select`: seçili etiket ve ok Canvas üzerinde çizilir; tekli seçimde liste
   motorun kendi katmanı olarak açılır. Fareyle vurgu/seçim, ok tuşları,
   `Home`/`End`, `PageUp`/`PageDown`, harf ile typeahead, kaydırma çubuğu ve
-  pasif `option` atlama desteklenir. `multiple` seçim yalnızca API ve form
-  verisi düzeyinde tutulur.
+  pasif `option` atlama desteklenir. `select[multiple]` açılır katman yerine
+  yerinde liste olarak çizilir: görünen satır sayısı `size` niteliğinden gelir,
+  satır yüksekliği `lineHeight`/`1.4em`; tık tek satırı seçer, `Ctrl+tık`
+  işareti değiştirir, `Shift+tık` aralık seçer. Klavyede oklar/`Home`/`End`/
+  `PageUp`/`PageDown` odağı taşır (`Ctrl` ile yalnız odak), `Space`/`Enter`
+  işareti değiştirir ve typeahead eşleşen satıra gider; liste odakla birlikte
+  kaydırılır.
 - Klavye: metin kutusu ve `textarea` içine yazma/silme, imleç gezinmesi,
   `Shift` ile seçim, `Ctrl+A`, `Ctrl+C/X/V`, `Tab`/`Shift+Tab` odak sırası,
   `Enter` ile gönderme ve `Escape` ile odaktan çıkma. Tek satırlı kontroller
@@ -210,11 +215,10 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
 - `::before` / `::after` yalnızca `content` metnini destekler; `counter()`,
   `attr()`, `open-quote`/`close-quote` ve `url()` içerikleri üretilmez.
 - Harici CSS ve script dosyaları yüklenmez; yalnızca sayfa içi `<style>` / `<script>`.
-- Formlarda dosya yükleme/dosya seçici, çoklu `select` için açılır liste ve
-  IME kompozisyonu yok. `select` listesi
-  tekli seçim içindir; `multiple` yalnızca değer API'si ve form verisinde
-  tutulur. `number` dışındaki tarih/sayı biçimleri native denetimlerle
-  sınırlı değildir.
+- Formlarda dosya yükleme/dosya seçici ve IME kompozisyonu yok. Çoklu seçim
+  `select[multiple]` ile yerinde liste olarak çalışır; açılır katmanda çoklu
+  işaret kutusu yoktur. `number` dışındaki tarih/sayı biçimleri native
+  denetimlerle sınırlı değildir.
 - Doğrulama; `willValidate` ayrıntıları, `setCustomValidity` dışındaki özel
   doğrulama kancaları ve `novalidate` dışındaki form düzeyi seçenekleri
   kapsamaz. Ağ gönderiminde çerez/redirect davranışı `fetch` varsayılanlarına

@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { parseDocument } from '../src/html/parser.js';
 import { computeStyles } from '../src/style.js';
 import { layoutDocument } from '../src/layout.js';
+import { collectFormData, selectedOptionIndexes, multiSelectRowHeight, multiSelectRows } from '../src/form.js';
 import { NarvisEngine } from '../src/engine.js';
 
 let failures = 0;
@@ -830,6 +831,156 @@ function makeEngineHarness(html, options = {}) {
 
   engine.handleKeyDown({ key: 'ArrowUp' });
   assert(select.value === 'a', 'select: kapali listede ok tusu secimi degistirir');
+}
+
+/* select[multiple]: yerinde liste — olculer, tik/kombinasyon, klavye ve form verisi. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <form id="f"><select id="m" name="konular" multiple size="4">
+      <option value="a">Alfa</option>
+      <option value="b" selected>Beta</option>
+      <option value="c">Gama</option>
+      <option value="d">Delta</option>
+      <option value="e" disabled>Pasif</option>
+      <option value="f">Epsilon</option>
+    </select></form>`);
+  const doc = engine.document;
+  const select = doc.getElementById('m');
+  const rowH = multiSelectRowHeight(select); /* UA satiri: fontSize * 1.4 */
+  const rows = multiSelectRows(select);
+
+  assert(rows === 4, 'multiple: size niteligi 4 satir sayisini verir');
+  assert(Math.abs(select._box.contentHeight - 4 * rowH) < 0.5,
+    'multiple: icerik yuksekligi size niteligi kadar satirdir');
+  assert(selectedOptionIndexes(select).join(',') === '1',
+    'multiple: baslangic secimi selected niteliginden gelir');
+
+  let changes = 0;
+  let inputs = 0;
+  select.addEventListener('change', () => { changes += 1; });
+  select.addEventListener('input', () => { inputs += 1; });
+
+  /* Tiklamalar motor click hattindan: point {x,y,ctrlKey,shiftKey}. */
+  const b = select._box;
+  const rowX = b.contentX + 12;
+  const rowY = (row) => b.contentY + row * rowH + rowH / 2;
+
+  engine.click(rowX, rowY(2));
+  assert(selectedOptionIndexes(select).join(',') === '2' && select._multiFocus === 2,
+    'multiple: tiklama o satiri tek basina secer ve odaklar');
+  assert(changes === 1 && inputs === 1, 'multiple: tiklama input+change yayar');
+
+  /* API: value ve selectedIndex tek option secer. */
+  select.value = 'a';
+  assert(selectedOptionIndexes(select).join(',') === '0',
+    'multiple: value setter yalniz eslesen optioni secer');
+  select.selectedIndex = 2;
+  assert(selectedOptionIndexes(select).join(',') === '2',
+    'multiple: selectedIndex setter tek option secer');
+
+  engine.click(rowX, rowY(0), { ctrlKey: true });
+  assert(selectedOptionIndexes(select).join(',') === '0,2',
+    'multiple: Ctrl+tik mevcut secime ekler');
+
+  engine.click(rowX, rowY(3), { shiftKey: true });
+  assert(selectedOptionIndexes(select).join(',') === '0,1,2,3',
+    'multiple: Shift+tik son tik kelimesinden aralik secer');
+
+  /* End: son satira odak + liste kaydirma. */
+  engine.handleKeyDown({ key: 'End' });
+  assert(selectedOptionIndexes(select).join(',') === '5' && select._multiScroll === 2,
+    'multiple: End son satiri secer ve listeyi kaydirir');
+
+  /* Kaydirma sonrasi gorunen pasif satira tiklama secimi degistirmez. */
+  engine.click(rowX, rowY(2));
+  assert(selectedOptionIndexes(select).join(',') === '5',
+    'multiple: pasif satira tiklama secimi degistirmez');
+
+  /* Form sifirlama, selected niteligindeki baslangic secimini geri getirir. */
+  engine.resetForm(doc.getElementById('f'));
+  assert(selectedOptionIndexes(select).join(',') === '1',
+    'multiple: form sifirlama nitelikteki baslangic secimini geri getirir');
+}
+
+/* select[multiple] klavye: oklar tek secim, Ctrl+ok yalniz odak, Space toggle, Shift+ok aralik. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <form id="f"><select id="m" name="konular" multiple size="4">
+      <option value="a" selected>Alfa</option>
+      <option value="b">Beta</option>
+      <option value="c" disabled>Pasif</option>
+      <option value="d">Gama</option>
+      <option value="e">Delta</option>
+    </select></form>`);
+  const doc = engine.document;
+  const select = doc.getElementById('m');
+  let changes = 0;
+  select.addEventListener('change', () => { changes += 1; });
+
+  select.focus();
+  assert(select._multiFocus === 0, 'multiple klavye: odak ilk secili satirda kurulur');
+
+  engine.handleKeyDown({ key: 'ArrowDown' });
+  assert(selectedOptionIndexes(select).join(',') === '1' && select._multiFocus === 1,
+    'multiple klavye: asagi ok odaqla birlikte tek satir secimini tasir');
+
+  engine.handleKeyDown({ key: 'ArrowDown', ctrlKey: true });
+  assert(select._multiFocus === 3, 'multiple klavye: Ctrl+ok pasif satiri atlayarak odagi tasir');
+  assert(selectedOptionIndexes(select).join(',') === '1',
+    'multiple klavye: Ctrl+ok secimi degistirmez');
+  engine.handleKeyDown({ key: 'ArrowDown', ctrlKey: true });
+  assert(select._multiFocus === 4 && selectedOptionIndexes(select).join(',') === '1',
+    'multiple klavye: Ctrl+ok gidip pasif yolu atlar');
+
+  engine.handleKeyDown({ key: ' ' });
+  assert(selectedOptionIndexes(select).join(',') === '1,4',
+    'multiple klavye: Space odak satirini toggle eder');
+  engine.handleKeyDown({ key: ' ' });
+  assert(selectedOptionIndexes(select).join(',') === '1',
+    'multiple klavye: ikinci Space toggle kapatir');
+
+  engine.handleKeyDown({ key: 'ArrowUp', shiftKey: true });
+  assert(selectedOptionIndexes(select).join(',') === '3,4',
+    'multiple klavye: Shift+ok cipadan araligi genisletir (pasif atlama)');
+  engine.handleKeyDown({ key: 'ArrowUp', shiftKey: true });
+  assert(selectedOptionIndexes(select).join(',') === '1,3,4',
+    'multiple klavye: ikinci Shift+ok araligi Alfa'+"'ya uzatir");
+
+  engine.handleKeyDown({ key: 'Home' });
+  assert(selectedOptionIndexes(select).join(',') === '0',
+    'multiple klavye: Home odak tek secime donusur');
+  changes = 0;
+  engine.handleKeyDown({ key: 'ArrowUp' });
+  assert(select._multiFocus === 0 && changes === 0,
+    'multiple klavye: sonda ok tusu degismiyorsa change yamaz');
+
+  engine.handleKeyDown({ key: 'g' });
+  assert(select._multiFocus === 3 && selectedOptionIndexes(select).join(',') === '3',
+    'multiple klavye: yazarak odak eslesen satira tasir ve secimi gunceller');
+}
+
+/* select[multiple] form verisi ve dogrulama. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <form id="f" action="/gonder" method="get">
+      <select id="m" name="konular" multiple required>
+        <option value="a">Alfa</option>
+        <option value="b">Beta</option>
+      </select>
+      <input type="submit" value="G" id="go">
+    </form>`);
+  const doc = engine.document;
+  const select = doc.getElementById('m');
+  const form = doc.getElementById('f');
+
+  assert(form.checkValidity() === false, 'multiple dogrulama: bos coklu select gecersiz');
+  select.options[0].selected = true;
+  select.options[1].selected = true;
+  const pairs = collectFormData(form);
+  assert(pairs.some(([n, v]) => n === 'konular' && v === 'a')
+    && pairs.some(([n, v]) => n === 'konular' && v === 'b'),
+    'multiple form verisi: her secili option bir [ad, deger] ciftidir');
+  assert(form.checkValidity() === true, 'multiple dogrulama: secim sonrasi gecerli');
 }
 
 /* Dogrulama, ozel mesaj ve form gonderim istegi (GET/POST). */

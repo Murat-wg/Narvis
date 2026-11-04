@@ -3,7 +3,8 @@
 
 import { cssColor } from './css/values.js';
 import { fontString } from './font.js';
-import { controlLabel, optionLabel, selectedOption } from './form.js';
+import { controlLabel, optionLabel, selectedOption, selectedOptionIndexes, optionElements } from './form.js';
+import { multiSelectRowHeight } from './form.js';
 
 const isPct = (v) => v && typeof v === 'object' && 'pct' in v;
 
@@ -292,6 +293,7 @@ function paintCaret(ctx, box, multiline, value, cx, cy, shift = 0, lh = 0, fs = 
 
 function paintSelectControl(ctx, box) {
   const el = box.el;
+  if (el?.hasAttribute?.('multiple')) return paintMultiSelectControl(ctx, box);
   const style = box.style;
   const option = selectedOption(el);
   const text = option ? optionLabel(option) : '';
@@ -326,6 +328,74 @@ function paintSelectControl(ctx, box) {
   ctx.closePath();
   ctx.fillStyle = disabled ? '#9b9b9b' : '#4a4a4a';
   ctx.fill();
+}
+
+/* select[multiple]: satir satir liste; secili satir vurgulu. */
+function paintMultiSelectControl(ctx, box) {
+  const el = box.el;
+  const style = box.style;
+  const options = optionElements(el);
+  const cx = box.contentX;
+  const cy = box.contentY;
+  const cw = Math.max(0, box.contentWidth);
+  const ch = Math.max(0, box.contentHeight);
+  if (cw <= 0 || ch <= 0 || !options.length) return;
+  const fs = style.fontSize || 16;
+  const rowH = multiSelectRowHeight(el);
+  const disabled = el.hasAttribute('disabled');
+  const focused = el.ownerDocument?.activeElement === el;
+  const selected = new Set(selectedOptionIndexes(el));
+  const focusIdx = Number.isInteger(el._multiFocus) ? el._multiFocus : -1;
+  const visible = Math.max(1, Math.floor(ch / rowH));
+  const maxScroll = Math.max(0, options.length - visible);
+  const scroll = clampScrollForMulti(el, maxScroll);
+
+  ctx.save();
+  ctx.font = fontString({ ...style, fontWeight: 400 });
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.beginPath();
+  ctx.rect(cx, cy, cw, ch);
+  ctx.clip();
+  const textMax = cw - 12;
+
+  for (let row = 0; row < visible; row++) {
+    const index = scroll + row;
+    if (index >= options.length) break;
+    const y = cy + row * rowH;
+    if (selected.has(index)) {
+      ctx.fillStyle = '#e2ecfb';
+      ctx.fillRect(cx + 1, y, cw - 2, rowH);
+    } else if (focused && index === focusIdx) {
+      ctx.fillStyle = '#f1f5fb';
+      ctx.fillRect(cx + 1, y, cw - 2, rowH);
+    }
+    const option = options[index];
+    ctx.fillStyle = disabled || option.hasAttribute('disabled') ? [117, 117, 117, 1] : cssColor(style.color);
+    ctx.fillText(ellipsize(ctx, optionLabel(option), textMax), cx + 6, y + rowH / 2 + 0.5);
+  }
+
+  if (options.length > visible) {
+    const trackX = box.x + box.width - box.border.right - 7;
+    const trackY = cy + 2;
+    const trackH = Math.max(1, ch - 4);
+    const thumbH = Math.max(16, trackH * (visible / options.length));
+    const thumbY = trackY + (trackH - thumbH) * (scroll / Math.max(1, maxScroll));
+    ctx.fillStyle = 'rgba(90, 104, 120, 0.22)';
+    roundedRect(ctx, trackX, trackY, 4, trackH, 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(90, 104, 120, 0.55)';
+    roundedRect(ctx, trackX, thumbY, 4, thumbH, 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function clampScrollForMulti(el, maxScroll) {
+  let scroll = Number.isInteger(el._multiScroll) ? el._multiScroll : 0;
+  scroll = Math.max(0, Math.min(maxScroll, scroll));
+  el._multiScroll = scroll;
+  return scroll;
 }
 
 /* ------------------------------------------------------------------ *

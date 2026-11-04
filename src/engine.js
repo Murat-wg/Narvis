@@ -15,13 +15,24 @@ import {
   controlType,
   isDisabled,
   isTextControl,
+  multiSelectRowHeight,
   optionElements,
   optionLabel,
   selectedOptionIndex,
+  selectedOptionIndexes,
 } from './form.js';
 import { isValidatableFormControl } from './validation.js';
 
 const MAX_LOG = 200;
+
+/* Click/klavye araliklarinda kapanan aralik [start..end]. */
+function range(start, end) {
+  const a = Math.min(start, end);
+  const b = Math.max(start, end);
+  const out = [];
+  for (let i = a; i <= b; i++) out.push(i);
+  return out;
+}
 
 export class NarvisEngine {
   constructor(canvas, options = {}) {
@@ -406,7 +417,9 @@ export class NarvisEngine {
     el.dispatchEvent(event);
     if (!event.defaultPrevented) {
       const skipCaret = dragEnded && dragEnded.moved && dragEnded.el === el;
-      this.applyFormDefaults(el, skipCaret ? null : { x, y, shiftKey: !!options.shiftKey });
+      this.applyFormDefaults(el, skipCaret ? null : {
+        x, y, shiftKey: !!options.shiftKey, ctrlKey: !!options.ctrlKey,
+      });
       const anchor = el.closest?.('a[href]');
       if (anchor) {
         const href = anchor.getAttribute('href');
@@ -488,7 +501,7 @@ export class NarvisEngine {
     const type = name === 'input' ? controlType(target) : '';
 
     if (name === 'select') {
-      if (target.hasAttribute('multiple')) target.focus();
+      if (target.hasAttribute('multiple')) this.multiClick(target, point);
       else this.openSelect(target);
       this.invalidate();
       return;
@@ -545,7 +558,8 @@ export class NarvisEngine {
         control.checked = def;
       } else if (control.localName === 'select') {
         control._selectedIndex = null;
-        for (const option of optionElements(control)) option._selected = false;
+        /* null: option'lardaki selected niteligi yeniden gecerli olur. */
+        for (const option of optionElements(control)) option._selected = null;
         control._markDirty();
       } else if (!['submit', 'reset', 'button', 'file'].includes(type)) {
         control._value = null;
@@ -1078,6 +1092,8 @@ export class NarvisEngine {
   selectKey(select, init) {
     const key = String(init.key ?? '');
     const ctrl = !!(init.ctrlKey || init.metaKey);
+    /* select[multiple]: acilir liste yerine yerinde liste. */
+    if (select.hasAttribute('multiple')) return this.multiSelectKey(select, init);
     if (key === ' ' || key === 'Enter' || (init.altKey && key === 'ArrowDown')) {
       this.openSelect(select);
       return true;
@@ -1311,6 +1327,223 @@ export class NarvisEngine {
         return;
       }
     }
+  }
+
+  /* ---------------------------------------------------------------- *
+   * select[multiple]: yerinde liste; tik / Ctrl+tik / Shift+tik ve
+   * ok tuslari ile coklu secim. Secim durumu option._selected uzerinde.
+   * ---------------------------------------------------------------- */
+
+  multiMetrics(select) {
+    const box = select._box;
+    const rowH = multiSelectRowHeight(select);
+    const options = optionElements(select);
+    const visible = Math.max(1, Math.floor((box?.contentHeight ?? 0) / rowH));
+    const maxScroll = Math.max(0, options.length - visible);
+    let scroll = Number.isInteger(select._multiScroll) ? select._multiScroll : 0;
+    select._multiScroll = scroll = Math.max(0, Math.min(maxScroll, scroll));
+    return { box, rowH, options, visible, maxScroll, scroll };
+  }
+
+  multiIndexAtPoint(select, x, y) {
+    const { box, rowH, options, scroll } = this.multiMetrics(select);
+    if (!box) return -1;
+    const row = Math.floor((y + this.scrollY - box.contentY) / rowH);
+    const index = scroll + row;
+    if (x + this.scrollX < box.contentX || x + this.scrollX > box.contentX + box.contentWidth) return -1;
+    if (row < 0 || index < 0 || index >= options.length) return -1;
+    return index;
+  }
+
+  multiEnsureVisible(select, index) {
+    const { visible, maxScroll } = this.multiMetrics(select);
+    if (index == null || index < 0) return;
+    let scroll = select._multiScroll ?? 0;
+    if (index < scroll) scroll = index;
+    else if (index >= scroll + visible) scroll = index - visible + 1;
+    select._multiScroll = Math.max(0, Math.min(maxScroll, scroll));
+  }
+
+  multiFocusIndex(select) {
+    const { options } = this.multiMetrics(select);
+    let focus = Number.isInteger(select._multiFocus) ? select._multiFocus : -1;
+    if (focus < 0 || focus >= options.length) {
+      const selected = selectedOptionIndexes(select);
+      focus = selected.length ? selected[0] : -1;
+    }
+    if (focus < 0 || focus >= options.length || options[focus].hasAttribute('disabled')) {
+      focus = options.findIndex((option) => !option.hasAttribute('disabled'));
+    }
+    select._multiFocus = focus;
+    if (focus >= 0) this.multiEnsureVisible(select, focus);
+    return focus;
+  }
+
+  /* Secim birligi: sadece bu fonksiyon option._selected yazar ve olay yayar. */
+  setMultiSelection(select, indexes) {
+    const options = optionElements(select);
+    const valid = new Set((indexes ?? []).filter((i) => Number.isInteger(i)
+      && i >= 0 && i < options.length && !options[i].hasAttribute('disabled')));
+    for (let i = 0; i < options.length; i++) {
+      options[i]._selected = valid.has(i);
+      options[i]._markDirty?.();
+    }
+    if (valid.size) {
+      const first = [...valid].sort((a, b) => a - b)[0];
+      select._selectedIndex = first;
+    } else {
+      select._selectedIndex = null;
+    }
+    select._valueAtFocus = select.value;
+    if (this.validation?.el === select) this.hideValidation();
+    select.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, inputType: 'insertReplacementText' }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    this.invalidate();
+    return [...valid];
+  }
+
+  /* Odagi tasi; select/extend/caret modlarinda secimi guncelle. */
+  multiMoveFocus(select, index, mode = 0) {
+    const options = optionElements(select);
+    if (index < 0 || index >= options.length || options[index].hasAttribute('disabled')) return false;
+    const prev = select._multiFocus;
+    const anchor = Number.isInteger(select._multiAnchor) ? select._multiAnchor : prev;
+    select._multiFocus = index;
+    select._multiAnchor = mode === 2 ? Math.max(0, anchor ?? 0) : index;
+    this.multiEnsureVisible(select, index);
+    if (mode === 2) {
+      /* Shift+ok: cipa sabit araligi genislet. */
+      if (Number.isInteger(anchor) && anchor >= 0) {
+        this.setMultiSelection(select, range(anchor, index));
+      }
+    } else if (mode === 0) {
+      /* Ok tuslari (Ctrl'siz): tek satir sec. */
+      this.setMultiSelection(select, [index]);
+    } else {
+      /* Ctrl+ok: yalniz odak. */
+      this.invalidate();
+    }
+    return true;
+  }
+
+  multiStep(select, delta, shift, ctrl) {
+    const { options } = this.multiMetrics(select);
+    let index = Number.isInteger(select._multiFocus) ? select._multiFocus : this.multiFocusIndex(select);
+    if (index < 0) index = delta > 0 ? options.length : -1;
+    for (let i = index + delta; i >= 0 && i < options.length; i += delta) {
+      if (!options[i].hasAttribute('disabled')) {
+        return this.multiMoveFocus(select, i, ctrl ? 1 : shift ? 2 : 0);
+      }
+    }
+    return false;
+  }
+
+  multiEdge(select, last, shift, ctrl) {
+    const { options } = this.multiMetrics(select);
+    const start = last ? options.length - 1 : 0;
+    const step = last ? -1 : 1;
+    for (let i = start; i >= 0 && i < options.length; i += step) {
+      if (!options[i].hasAttribute('disabled')) {
+        return this.multiMoveFocus(select, i, ctrl ? 1 : shift ? 2 : 0);
+      }
+    }
+    return false;
+  }
+
+  multiPage(select, down, shift, ctrl) {
+    const { options, visible } = this.multiMetrics(select);
+    const step = Math.max(1, visible - 1);
+    const focus = Number.isInteger(select._multiFocus) ? select._multiFocus : this.multiFocusIndex(select);
+    const target = down
+      ? Math.min(options.length - 1, (focus < 0 ? -1 : focus) + step)
+      : Math.max(0, Math.max(0, focus) - step);
+    return this.multiMoveFocus(select, target, ctrl ? 1 : shift ? 2 : 0);
+  }
+
+  multiSelectKey(select, init) {
+    const key = String(init.key ?? '');
+    const ctrl = !!(init.ctrlKey || init.metaKey);
+    const shift = !!init.shiftKey;
+    this.multiFocusIndex(select);
+    if (key === ' ' || key === 'Enter') {
+      const focus = select._multiFocus;
+      const options = optionElements(select);
+      if (focus < 0 || options[focus].hasAttribute('disabled')) return true;
+      const selected = selectedOptionIndexes(select);
+      const next = selected.includes(focus)
+        ? selected.filter((i) => i !== focus)
+        : [...selected, focus];
+      select._multiAnchor = focus;
+      this.setMultiSelection(select, next);
+      return true;
+    }
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      this.multiStep(select, key === 'ArrowDown' ? 1 : -1, shift, ctrl);
+      return true;
+    }
+    if (key === 'PageDown' || key === 'PageUp') {
+      this.multiPage(select, key === 'PageDown', shift, ctrl);
+      return true;
+    }
+    if (key === 'Home' || key === 'End') {
+      this.multiEdge(select, key === 'End', shift, ctrl);
+      return true;
+    }
+    if (key.length === 1 && !ctrl && !init.altKey) {
+      /* Yazarak odak tasi: secim degismez. */
+      const text = String(key);
+      this._typeahead += text.toLowerCase();
+      clearTimeout(this._typeaheadTimer);
+      this._typeaheadTimer = setTimeout(() => { this._typeahead = ''; }, 700);
+      const { options } = this.multiMetrics(select);
+      const start = Math.max(0, select._multiFocus);
+      for (let offset = 0; offset < options.length; offset++) {
+        const index = (start + offset) % options.length;
+        const option = options[index];
+        if (option.hasAttribute('disabled')) continue;
+        if (optionLabel(option).toLowerCase().startsWith(this._typeahead)) {
+          return this.multiMoveFocus(select, index, 0);
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  multiClick(select, point = null) {
+    select.focus();
+    this.multiFocusIndex(select);
+    if (!point) {
+      this.invalidate();
+      return select;
+    }
+    const index = this.multiIndexAtPoint(select, point.x, point.y);
+    if (index < 0) {
+      this.invalidate();
+      return select;
+    }
+    const options = optionElements(select);
+    const option = options[index];
+    if (option.hasAttribute('disabled')) {
+      this.invalidate();
+      return select;
+    }
+    const anchor = select._multiAnchor;
+    select._multiFocus = index;
+    select._multiAnchor = index;
+    if (point.ctrlKey) {
+      /* Ctrl+tik: o satiri isaretle/isaretini kaldir. */
+      const selected = selectedOptionIndexes(select);
+      this.setMultiSelection(select, selected.includes(index)
+        ? selected.filter((i) => i !== index)
+        : [...selected, index]);
+    } else if (point.shiftKey && Number.isInteger(anchor) && anchor >= 0) {
+      this.setMultiSelection(select, range(anchor, index));
+    } else {
+      this.setMultiSelection(select, [index]);
+    }
+    this.invalidate();
+    return select;
   }
 
   /* ---------------------------------------------------------------- *

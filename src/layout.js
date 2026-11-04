@@ -3,7 +3,7 @@
 
 import { clamp } from './util.js';
 import { fontString } from './font.js';
-import { controlLabel } from './form.js';
+import { controlLabel, multiSelectRows, multiSelectRowHeight } from './form.js';
 
 const num = (v, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 const isPct = (v) => v && typeof v === 'object' && 'pct' in v;
@@ -1349,7 +1349,8 @@ class LayoutEngine {
     if (box.formKind === 'select') {
       let widest = 0;
       for (const option of el.options) widest = Math.max(widest, this.measure(String(option.textContent ?? '').trim(), box.style));
-      return Math.max(52, widest + charW * 2.4);
+      const multiExtra = el.hasAttribute?.('multiple') ? charW * 3 + 12 : 0;
+      return Math.max(52, widest + charW * 2.4 + multiExtra);
     }
     // text: size niteligi (on tanimli 20); deger uzasa da kutu sabit kalir
     const size = Math.min(999, Math.max(1, parseInt(el.getAttribute('size'), 10) || 20));
@@ -1363,6 +1364,10 @@ class LayoutEngine {
     if (box.formKind === 'textarea') {
       const rows = Math.min(999, Math.max(1, parseInt(box.el.getAttribute('rows'), 10) || 2));
       return rows * lh;
+    }
+    /* select[multiple]: size niteligi (varsayilan 4) satir kadar liste. */
+    if (box.formKind === 'select' && box.el?.hasAttribute?.('multiple')) {
+      return multiSelectRows(box.el) * multiSelectRowHeight(box.el);
     }
     return lh;
   }

@@ -6,6 +6,7 @@ import {
   isDisabled,
   isTextControl,
   selectedOption,
+  selectedOptionIndexes,
 } from './form.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -55,6 +56,10 @@ function valueMissing(el) {
     return local === 'input' && type === 'radio' ? !el.checked && !radioGroupChecked(el) : !el.checked;
   }
   if (local === 'select') {
+    if (el.hasAttribute('multiple')) {
+      /* required + multiple: en az bir secili (ve etkin) option gerekir. */
+      return selectedOptionIndexes(el).length === 0;
+    }
     return selectedOption(el) == null || String(el.value) === '';
   }
   return String(el.value ?? '') === '';

@@ -71,6 +71,7 @@ select {
   color: #1b1f24; font-family: inherit; font-size: 14px;
   padding: 2px 24px 2px 6px; cursor: pointer;
 }
+select[multiple] { padding: 2px 6px; cursor: default; }
 select:disabled { color: #757575; background-color: #f2f2f2; cursor: default; }
 input[type=checkbox], input[type=radio] { border: 0; background: none; padding: 0; cursor: pointer; }
 input[type=hidden] { display: none !important; }

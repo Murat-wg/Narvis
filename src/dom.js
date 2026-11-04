@@ -573,7 +573,15 @@ export class Element extends Node {
   set value(v) {
     if (this.localName === 'select') {
       const index = findOptionIndexByValue(this, v);
-      this._selectedIndex = index;
+      if (this.multiple) {
+        const options = this.options;
+        for (let i = 0; i < options.length; i++) {
+          options[i]._selected = i === index && !options[i].disabled;
+        }
+        this._selectedIndex = index >= 0 ? index : -1;
+      } else {
+        this._selectedIndex = index;
+      }
       this._markDirty();
       return;
     }
@@ -625,7 +633,10 @@ export class Element extends Node {
   get multiple() { return this.localName === 'select' && this.hasAttribute('multiple'); }
 
   get selectedIndex() {
-    if (this.localName === 'select') return selectedOptionIndex(this);
+    if (this.localName === 'select') {
+      if (this.multiple) return this.options.findIndex((option) => option.selected);
+      return selectedOptionIndex(this);
+    }
     return -1;
   }
   set selectedIndex(v) {
@@ -633,6 +644,10 @@ export class Element extends Node {
     const count = this.options.length;
     const index = Number(v);
     this._selectedIndex = Number.isInteger(index) && index >= 0 && index < count ? index : -1;
+    /* Coklu listede selectedIndex tek basina dilim secimi belirler. */
+    if (this.multiple) {
+      this.options.forEach((option, i) => { option._selected = i === this._selectedIndex; });
+    }
     this._markDirty();
   }
 
@@ -661,7 +676,7 @@ export class Element extends Node {
       else this.removeAttribute('selected');
       return;
     }
-    if (this.multiple) {
+    if (select.multiple) {
       this._selected = !!v;
       this._markDirty();
       return;
@@ -1039,6 +1054,14 @@ export class Element extends Node {
     doc.activeElement = this;
     this._ensureCaret();
     this._valueAtFocus = this.value;
+    /* select[multiple]: liste odagi seciliya ya da ilk etkin satira kurulur. */
+    if (this.multiple && !Number.isInteger(this._multiFocus)) {
+      const selected = this.selectedOptions;
+      const options = this.options;
+      this._multiFocus = selected.length
+        ? options.indexOf(selected[0])
+        : options.findIndex((option) => !option.disabled);
+    }
     this._markDirty();
     this.dispatchEvent(new Event('focus'));
   }
