@@ -204,6 +204,7 @@ export class NarvisEngine {
 
   paintNow() {
     if (!this.layout) return;
+    this._updateSticky();
     paintDocument(this.ctx, this.layout, {
       viewport: this.viewport,
       dpr: this.dpr,
@@ -213,6 +214,42 @@ export class NarvisEngine {
       validation: this.validation,
       selectPopup: this.selectPopup,
     });
+  }
+
+  /* Kaydirma sonrasi sticky kutulari taban konumlarindan yeniden hesaplar.
+     Once onceki kaydirmalar geri alinir; boylece her kare birikim yapmaz. */
+  _updateSticky() {
+    const sticky = this.layout?.sticky;
+    if (!sticky?.length) return;
+    const shift = this.layout.shiftSubtree;
+    if (typeof shift !== 'function') return;
+
+    for (let i = sticky.length - 1; i >= 0; i--) {
+      const record = sticky[i];
+      if (record.offsetY) {
+        shift(record.box, 0, -record.offsetY);
+        record.offsetY = 0;
+      }
+    }
+
+    for (const record of sticky) {
+      const box = record.box;
+      let targetY = record.baseY;
+      if (record.top != null) {
+        targetY = Math.max(targetY, this.scrollY + record.top);
+      }
+      if (record.bottom != null) {
+        targetY = Math.min(targetY, this.scrollY + this.viewport.height - record.bottom - box.height);
+      }
+      const minY = record.limitTop;
+      const maxY = Math.max(minY, record.limitBottom - box.height);
+      targetY = Math.min(Math.max(targetY, minY), maxY);
+      const dy = targetY - box.y;
+      if (Math.abs(dy) > 0.01) {
+        shift(box, 0, dy);
+        record.offsetY += dy;
+      }
+    }
   }
 
   invalidate() {

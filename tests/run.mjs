@@ -7,7 +7,7 @@ import './layout-smoke.mjs';
 import { readFile } from 'node:fs/promises';
 import { parseDocument } from '../src/html/parser.js';
 import { computeStyles } from '../src/style.js';
-import { layoutDocument } from '../src/layout.js';
+import { layoutDocument, hitTest } from '../src/layout.js';
 import { collectFormData, selectedOptionIndexes, multiSelectRowHeight, multiSelectRows, buildFormRequest } from '../src/form.js';
 import { NarvisEngine } from '../src/engine.js';
 import { formFields, parseMultipart, renderFormResult } from '../serve.mjs';
@@ -685,10 +685,14 @@ function makeEngineHarness(html, options = {}) {
   globalThis.requestAnimationFrame = (fn) => { fn(0); return 0; };
   globalThis.cancelAnimationFrame = () => {};
   const drawn = [];
+  const clips = [];
+  let pendingRect = null;
   const fakeCtx = () => ({
     setTransform() {}, clearRect() {}, save() {}, restore() {}, translate() {},
     fillRect() {}, strokeRect() {}, beginPath() {}, closePath() {}, moveTo() {},
-    lineTo() {}, arc() {}, stroke() {}, fill() {}, rect() {}, clip() {},
+    lineTo() {}, arc() {}, stroke() {}, fill() {},
+    rect(x, y, width, height) { pendingRect = { x, y, width, height }; },
+    clip() { if (pendingRect) { clips.push(pendingRect); pendingRect = null; } },
     quadraticCurveTo() {}, bezierCurveTo() {}, ellipse() {}, setLineDash() {},
     createLinearGradient() { return { addColorStop() {} }; },
     createRadialGradient() { return { addColorStop() {} }; },
@@ -701,7 +705,7 @@ function makeEngineHarness(html, options = {}) {
   const canvas = { width: 0, height: 0, style: {}, getContext: fakeCtx };
   const engine = new NarvisEngine(canvas, { width: 800, height: 600, ...options });
   engine.load(html, { url: 'test://form-engine' });
-  return { engine, drawn };
+  return { engine, drawn, clips };
 }
 
 /* select API'si + olculer. */
@@ -1306,6 +1310,135 @@ function makeEngineHarness(html, options = {}) {
   engine.handleKeyDown({ key: ' ' });
   engine.scrollTo({ top: 3 });
   assert(!engine.selectPopup, 'kaydirma: sayfa kaydirilinca liste kapanir');
+}
+
+/* overflow kisayolu: iki deger, uzun ozellik yarisi ve gecersiz deger. */
+{
+  const { doc } = buildLayout(`<!doctype html><style>
+    body { margin: 0; }
+    #a { overflow: hidden auto; }
+    #b { overflow: banana; }
+    #c { overflow: hidden; overflow-x: scroll; }
+    #d { overflow-x: scroll; overflow: hidden; }
+  </style><div id="a"></div><div id="b"></div><div id="c"></div><div id="d"></div>`);
+  const a = doc.getElementById('a')._style;
+  const b = doc.getElementById('b')._style;
+  const c = doc.getElementById('c')._style;
+  const d = doc.getElementById('d')._style;
+  assert(a.overflowX === 'hidden' && a.overflowY === 'auto',
+    'overflow: iki deger x/y eksenlerine dagilir');
+  assert(b.overflowX === 'visible' && b.overflowY === 'visible',
+    'overflow: gecersiz anahtar sozcuk yok sayilir');
+  assert(c.overflowX === 'scroll' && c.overflowY === 'hidden',
+    'overflow: sonra gelen uzun ozellik kisayolu ezer');
+  assert(d.overflowX === 'hidden' && d.overflowY === 'hidden',
+    'overflow: sonra gelen kisayol uzun ozelligi ezer');
+}
+
+/* overflow kirpma: padding box, kaydirma alani, sayfa yuksekligi ve hitTest. */
+{
+  const { doc, layout } = buildLayout(`<!doctype html><style>
+    body { margin: 0; }
+    #clip { width: 100px; height: 50px; padding: 5px; border: 2px solid #000; overflow: hidden; }
+    #inner { width: 300px; height: 300px; background-color: #f00; }
+    #after { height: 20px; }
+  </style><div id="clip"><div id="inner">x</div></div><div id="after"></div>`);
+  const clip = doc.getElementById('clip');
+  const inner = doc.getElementById('inner');
+  const box = clip._box;
+  const overflow = box._overflow;
+  assert(!!overflow, 'overflow: kirpan kutu tasma bilgisi tasir');
+  assert(Math.abs(overflow.clipRect.x - (box.x + 2)) < 0.5
+    && Math.abs(overflow.clipRect.y - (box.y + 2)) < 0.5
+    && Math.abs(overflow.clipRect.width - 110) < 0.5
+    && Math.abs(overflow.clipRect.height - 60) < 0.5,
+    'overflow: kirpma dikdortgeni padding box ile sinirlidir');
+  assert(Number.isFinite(overflow.scrollWidth) && Number.isFinite(overflow.scrollHeight),
+    'overflow: kaydirma olculeri sonludur');
+  assert(Math.abs(overflow.scrollWidth - 305) < 0.5
+    && Math.abs(overflow.scrollHeight - 305) < 0.5,
+    'overflow: kaydirma alani tasan icerigi kapsar');
+  assert(layout.height < 150,
+    'overflow: kirpilan icerik sayfa yuksekligini buyutmez');
+  assert(hitTest(layout, overflow.clipRect.x + 10, overflow.clipRect.y + 10) === inner,
+    'overflow: kirpma alani icinde alt oge hedef olur');
+  assert(hitTest(layout, overflow.clipRect.x + 10, overflow.clipRect.y + overflow.clipRect.height + 100) !== inner,
+    'overflow: kirpilan alanin disinda alt oge hedef olmaz');
+}
+
+/* overflow: grid olcusu satir ici icerigi iki kez dizer; ikinci gecisin
+   parcalari kaydirma alanini NaN'a cevirmemeli. */
+{
+  const { doc } = buildLayout(`<!doctype html><style>
+    body { margin: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; width: 300px; }
+    #clip { width: 120px; height: 40px; overflow: hidden; }
+    p { margin: 0; font-size: 16px; }
+  </style><div class="grid"><div id="clip"><p>Bu <span>satir ici</span> icerik
+    kirpilan kutunun disina tasacak kadar uzun bir metindir.</p></div><div>x</div></div>`);
+  const overflow = doc.getElementById('clip')._box._overflow;
+  assert(Number.isFinite(overflow.scrollWidth) && Number.isFinite(overflow.scrollHeight),
+    'overflow: grid icinde satir ici icerik sonlu kaydirma olculeri verir');
+  assert(overflow.scrollHeight > 40,
+    'overflow: satir ici icerigin dikey tasmasi kaydirma alanina girer');
+}
+
+/* overflow boyama: alt agac padding box'a kirpilir. */
+{
+  const { engine, clips } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #clip { width: 100px; height: 50px; padding: 5px; border: 2px solid #000; overflow: hidden; }
+    #inner { width: 300px; height: 300px; background-color: #f00; }
+  </style><div id="clip"><div id="inner"></div></div>`);
+  engine.paintNow();
+  const rect = engine.document.getElementById('clip')._box._overflow.clipRect;
+  assert(clips.some((c) => Math.abs(c.x - rect.x) < 0.5 && Math.abs(c.y - rect.y) < 0.5
+    && Math.abs(c.width - rect.width) < 0.5 && Math.abs(c.height - rect.height) < 0.5),
+    'overflow: boyama padding box kirpmasi uygular');
+}
+
+/* position: sticky: akista kalir, kaydirinca ust sinirda tutunur ve
+   kapsayici kutusunun disina cikmaz. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #wrap { height: 300px; }
+    #sticky { position: sticky; top: 20px; height: 30px; background-color: #f00; }
+    #spacer { height: 600px; }
+    #tall { height: 2000px; }
+  </style><div id="wrap"><div id="sticky">yapışkan</div><div id="spacer"></div></div><div id="tall"></div>`);
+  const doc = engine.document;
+  const sticky = doc.getElementById('sticky');
+  engine.paintNow();
+  assert(engine.layout.sticky.length === 1,
+    'sticky: yalnizca gercek eleman kutusu kayda girer');
+  assert(Math.abs(sticky._box.y - 20) < 0.5,
+    'sticky: ilk karede top mesafesine yerlesir');
+  engine.scrollTo({ top: 100, left: 0 });
+  assert(Math.abs(sticky._box.y - 120) < 0.5,
+    'sticky: kaydirinca top mesafesinde tutunur');
+  assert(engine.elementAt(10, 20) === sticky,
+    'sticky: ekran konumunda hitTest hedefi olur');
+  engine.scrollTo({ top: 1000, left: 0 });
+  assert(Math.abs(sticky._box.y - 270) < 0.5,
+    'sticky: kapsayici kutusunun alt sinirinda durur');
+  engine.scrollTo({ top: 0, left: 0 });
+  assert(Math.abs(sticky._box.y - 20) < 0.5,
+    'sticky: geri kaydirinca ayni top mesafesine doner');
+}
+
+/* position: sticky bottom: normalde ekranin altinda kalan kutu yukari tutunur. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #wrap { height: 2000px; }
+    #sticky { position: sticky; bottom: 10px; height: 20px; margin-top: 1900px; }
+  </style><div id="wrap"><div id="sticky"></div></div>`);
+  const doc = engine.document;
+  const sticky = doc.getElementById('sticky');
+  engine.paintNow();
+  assert(Math.abs(sticky._box.y - 570) < 0.5,
+    'sticky: bottom mesafesi kutuyu ekranin altina ceker');
 }
 
 if (failures > 0) {

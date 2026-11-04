@@ -283,6 +283,13 @@ function applyWideKeywords(winners, style, parent) {
   }
 }
 
+const OVERFLOW_KEYWORDS = new Set(['visible', 'hidden', 'clip', 'scroll', 'auto']);
+
+function overflowKeyword(value) {
+  const keyword = String(value ?? '').trim().toLowerCase();
+  return OVERFLOW_KEYWORDS.has(keyword) ? keyword : null;
+}
+
 function computeElementStyle(el, winners, parent, viewport, rootFontSize) {
   const style = initialStyle();
   const get = (name) => winners.get(name)?.value;
@@ -506,8 +513,10 @@ function computeElementStyle(el, winners, parent, viewport, rootFontSize) {
   // 6. Diger
   if (get('row-gap')) style.rowGap = Math.max(0, lengthValue(get('row-gap'), ctx) || 0);  if (get('column-gap')) style.columnGap = Math.max(0, lengthValue(get('column-gap'), ctx) || 0);
   if (get('opacity')) style.opacity = clamp(parseFloat(get('opacity')), 0, 1);
-  if (get('overflow-x')) style.overflowX = get('overflow-x');
-  if (get('overflow-y')) style.overflowY = get('overflow-y');
+  const overflowX = overflowKeyword(get('overflow-x'));
+  if (overflowX) style.overflowX = overflowX;
+  const overflowY = overflowKeyword(get('overflow-y'));
+  if (overflowY) style.overflowY = overflowY;
   if (get('visibility')) style.visibility = get('visibility');
   if (get('box-shadow')) style.boxShadow = parseShadow(get('box-shadow'));
   if (get('object-fit')) style.objectFit = get('object-fit');

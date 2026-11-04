@@ -7,10 +7,11 @@ CSS kaskadını kendi seçici motoruyla hesaplar, kutuları yerleştirir ve her 
 
 **Sürüm 0.1.** Çekirdek boru hattı tam: HTML ayrıştırma → kaskad/stiller →
 blok/inline/float/flex/grid/tablo yerleşimi → Canvas boyama, pseudo-element
-(`::before`/`::after` `content`) desteğiyle. Formlar gerçek klavye girdisi,
-kısıt doğrulaması, Canvas üzerinde açılan `select` listesi ve `fetch` ile ağ
-gönderimini destekler. Bilinçli sınırlar aşağıda dürüstçe listelenir; üretim
-tarayıcısı değil, motorun omurgasını gösteren bir çalışmadır.
+(`::before`/`::after` `content`) desteğiyle. `overflow` kırpma ve
+`position: sticky` kaydırma davranışı; formlar gerçek klavye girdisi, kısıt
+doğrulaması, dosya seçimi, Canvas üzerinde açılan `select` listesi ve `fetch`
+ile ağ gönderimini destekler. Bilinçli sınırlar aşağıda dürüstçe listelenir;
+üretim tarayıcısı değil, motorun omurgasını gösteren bir çalışmadır.
 
 ```
 HTML metni
@@ -80,7 +81,15 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   çakışması çözümü (kalin kenar + rengi kazanır).
 - Float: `float: left/right` (blok ve satır içi öğeler), `clear: left/right/both`,
   shrink-to-fit genişlik, yüzen bölge (BFC) kuralı. Flex/grid öğelerinde float yok sayılır.
-- `position: relative`, `absolute`, `fixed`; `z-index` sıralaması.
+- `position: relative`, `absolute`, `fixed`, `sticky`; `z-index` sıralaması.
+- `overflow`: `visible`/`hidden`/`clip`/`scroll`/`auto` ve iki değerli kısayol.
+  Görünür dışındaki değerler alt ağacı padding kutusuna kırpar; kırpılan içerik
+  sayfa yüksekliğini büyütmez ve kırpma dışındaki noktalar alttaki öğelere
+  geçmez. İç kaydırma çubuğu yoktur.
+- `position: sticky`: kutu normal akıştaki yerini korur; sayfa kaydıkça dikey
+  `top`/`bottom` mesafesinde tutunur, kapsayıcı kutusunun sınırları içinde
+  kalır ve normal içeriğin üstünde çizilir. Kaydırma her karede taban
+  konumdan yeniden hesaplanır.
 - List-item işaretleri (`disc`, `decimal`, …) basit konumla çizilir.
 - Form kontrolleri: `input` (text/search/email/url/tel/password/number,
   checkbox/radio/submit/reset/button, file, hidden), `textarea`, `select` ve
@@ -204,8 +213,10 @@ etkileşimi), klavye girdisi (yazma, silme, seçim, `Tab`, `Enter`), `select`
 listesi (açma, ok/Enter, fareyle seçim, pasif option, çizim), kısıt doğrulaması
 (Türkçe mesajlar, özel geçerlilik), ağ üzerinden form gönderimi (POST/GET
 gövdesi, yanıt geri çağrısı), dosya girdisi (`FileList`, `setFiles`, sahte
-`value`, `change` olayı, form verisi), ikili-güvenli multipart ayrıştırma ve
-pseudo-element içerikleri
+`value`, `change` olayı, form verisi), ikili-güvenli multipart ayrıştırma,
+`overflow` kırpma (padding kutusu, kaydırma alanı, sayfa yüksekliği, hitTest,
+boyama) ve `position: sticky` (üst/alt tutunma, kapsayıcı sınırı, kaydırınca
+tabana dönme) ve pseudo-element içerikleri
 (::before/::after sıralaması, `content: none`, spesifite, `var()`,
 `counter()` yokluğu) için regresyon kontrolleri bulunur.
 
@@ -213,7 +224,8 @@ pseudo-element içerikleri
 
 Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir çalışma:
 
-- `float` içinde `float: inline` başlangıcı, `sticky` ve çok sütun desteklenmez;
+- `float` içinde `float: inline` başlangıcı ve çok sütun desteklenmez; sticky
+  yalnızca dikey `top`/`bottom` ile çalışır, yatay yapışma yoktur;
   grid'de `grid-area`, `minmax()`, adlandırılmış izler ve `place-*` yok;
   satır-temelli sparse otomatik yerleşim uygulanır.
 - `col`/`colgroup` genişlikleri ve `border-collapse: collapse` desteklenir:
@@ -234,7 +246,8 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
   doğrulama kancaları ve `novalidate` dışındaki form düzeyi seçenekleri
   kapsamaz. Ağ gönderiminde çerez/redirect davranışı `fetch` varsayılanlarına
   bırakılır; istek iptali veya yükleme göstergesi yoktur.
-- Eleman bazlı kaydırma, `overflow` kırpma ve animasyonlar yok.
+- Eleman bazlı iç kaydırma (scrollbar) ve animasyonlar yok; `overflow` yalnızca
+  kırpar, kaydırma çubuğu çizmez.
 - Sayfa başına tek Canvas; alt bileşenler ayrı katman değildir.
 
 Bu sınırlara rağmen boru hattı gerçektir: ayrıştırma, kaskad, değişkenler, kutu

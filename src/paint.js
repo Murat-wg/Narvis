@@ -24,6 +24,8 @@ export function paintDocument(ctx, layout, options = {}) {
   ctx.textBaseline = 'alphabetic';
   paintBackgrounds(ctx, layout.root, { skipFixed: true });
   paintTexts(ctx, layout.root, { skipFixed: true });
+  /* Konumlanmis sticky kutular normal akisin ustunde cizilir. */
+  paintStickyLayer(ctx, layout.root, { skipFixed: true });
   ctx.restore();
 
   const fixed = [];
@@ -31,8 +33,8 @@ export function paintDocument(ctx, layout, options = {}) {
   if (fixed.length) {
     ctx.save();
     for (const box of fixed) {
-      paintBackgrounds(ctx, box, { skipFixed: false });
-      paintTexts(ctx, box, { skipFixed: false });
+      paintBackgrounds(ctx, box, { skipFixed: false, paintSticky: true });
+      paintTexts(ctx, box, { skipFixed: false, paintSticky: true });
     }
     ctx.restore();
   }
@@ -48,12 +50,54 @@ function collectFixed(box, out) {
   for (const child of box.children) collectFixed(child, out);
 }
 
+function collectStickyRoots(box, out) {
+  if (box.fixed) return;
+  if (box.style.position === 'sticky') { out.push(box); return; }
+  for (const child of box.children) collectStickyRoots(child, out);
+}
+
+/* Sticky kutulari normal akistan sonra, atalarindaki kirpma dikdortgenleri
+   hala gecerliyken ciz. Boylece kaydirma sirasinda sonraki icerigin altinda
+   kalmazlar. */
+function paintStickyLayer(ctx, root, env) {
+  const roots = [];
+  collectStickyRoots(root, roots);
+  if (!roots.length) return;
+  for (const box of roots) {
+    const clips = [];
+    for (let parent = box.parentBox; parent; parent = parent.parentBox) {
+      if (parent._overflow) clips.push(parent._overflow.clipRect);
+    }
+    ctx.save();
+    for (const rect of clips) {
+      ctx.beginPath();
+      ctx.rect(rect.x, rect.y, Math.max(0, rect.width), Math.max(0, rect.height));
+      ctx.clip();
+    }
+    paintBackgrounds(ctx, box, { ...env, paintSticky: true });
+    paintTexts(ctx, box, { ...env, paintSticky: true });
+    ctx.restore();
+  }
+}
+
 function alphaFor(box) {
   let a = 1;
   for (let b = box; b; b = b.parentBox) {
     if (b.style.opacity != null) a *= b.style.opacity;
   }
   return Math.max(0, Math.min(1, a));
+}
+
+/* Kirpan kutunun icerigini padding box'a hapseder. Kutunun kendi arka
+   plani ve cercevesi bu kirpmadan etkilenmez. */
+function clipToOverflow(ctx, box) {
+  const rect = box._overflow?.clipRect;
+  if (!rect) return false;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(rect.x, rect.y, Math.max(0, rect.width), Math.max(0, rect.height));
+  ctx.clip();
+  return true;
 }
 
 function paintBackgrounds(ctx, box, env) {
@@ -68,7 +112,12 @@ function paintBackgrounds(ctx, box, env) {
 
   if (box.kind === 'image') paintImage(ctx, box, alpha);
 
-  for (const child of box.children) paintBackgrounds(ctx, child, env);
+  const clipped = clipToOverflow(ctx, box);
+  for (const child of box.children) {
+    if (!env.paintSticky && child.style.position === 'sticky') continue;
+    paintBackgrounds(ctx, child, env);
+  }
+  if (clipped) ctx.restore();
 }
 
 function paintTexts(ctx, box, env) {
@@ -77,6 +126,7 @@ function paintTexts(ctx, box, env) {
   const alpha = alphaFor(box);
   if (alpha <= 0) return;
 
+  const clipped = clipToOverflow(ctx, box);
   if (box.kind === 'list-item') paintMarker(ctx, box, alpha);
   if (box.isFormControl) {
     ctx.save();
@@ -95,7 +145,11 @@ function paintTexts(ctx, box, env) {
     }
     ctx.restore();
   }
-  for (const child of box.children) paintTexts(ctx, child, env);
+  for (const child of box.children) {
+    if (!env.paintSticky && child.style.position === 'sticky') continue;
+    paintTexts(ctx, child, env);
+  }
+  if (clipped) ctx.restore();
 }
 
 /* ------------------------------------------------------------------ *

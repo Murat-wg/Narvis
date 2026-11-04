@@ -212,6 +212,7 @@ class LayoutEngine {
     this.getImage = getImage ?? (() => null);
     this.measureCache = new Map();
     this.boxes = [];
+    this.sticky = [];
   }
 
   measure(text, style) {
@@ -236,6 +237,8 @@ class LayoutEngine {
     this.resolveRelative(rootBox);
     this.resolveAbsolutes(rootBox, null);
     this.finishSegments(rootBox);
+    this.finalizeOverflow(rootBox);
+    this.collectSticky(rootBox);
     const height = this.documentHeight(rootBox);
     return {
       root: rootBox,
@@ -244,6 +247,8 @@ class LayoutEngine {
       width: this.width,
       height,
       boxes: this.boxes,
+      sticky: this.sticky,
+      shiftSubtree: (box, dx, dy) => this.shiftSubtree(box, dx, dy),
     };
   }
 
@@ -2430,11 +2435,98 @@ class LayoutEngine {
     walk(root);
   }
 
+  /* Her kutu icin kirpma dikdortgeni (padding box) ve kaydirilabilir
+     icerik olculerini hesaplar. Kutu alt agacina girmeden once cocuklarin
+     kendi tasma bilgisi hazir olur; boylece ic ice kirpma dogru kalir. */
+  finalizeOverflow(root) {
+    const walk = (box) => {
+      for (const child of box.children) walk(child);
+      const ox = box.style.overflowX;
+      const oy = box.style.overflowY;
+      const clipsX = ox && ox !== 'visible';
+      const clipsY = oy && oy !== 'visible';
+      if (!clipsX && !clipsY) return;
+
+      const clipRect = {
+        x: box.x + box.border.left,
+        y: box.y + box.border.top,
+        width: Math.max(0, box.width - box.border.left - box.border.right),
+        height: Math.max(0, box.height - box.border.top - box.border.bottom),
+      };
+      let maxRight = 0;
+      let maxBottom = 0;
+      /* Yalniz sonlu olculer kaydirma alanina girer; yarim kalmis bir
+         olcum NaN ile tum tasma degerini bozmasin. */
+      const include = (right, bottom) => {
+        if (Number.isFinite(right)) maxRight = Math.max(maxRight, right - clipRect.x);
+        if (Number.isFinite(bottom)) maxBottom = Math.max(maxBottom, bottom - clipRect.y);
+      };
+      const scan = (node, isRoot) => {
+        if (node.fixed) return;
+        if (!isRoot) {
+          include(node.x + node.width + num(node.margin.right),
+            node.y + node.height + num(node.margin.bottom));
+          /* Ic ice kirpan kutu: kendi disina tasan torunlari ust kutunun
+             kaydirma alanina ekleme. */
+          if (node._overflow) return;
+        }
+        for (const line of node.lineBoxes ?? []) {
+          for (const frag of line.fragments) {
+            if (frag.type === 'atomic' && frag.rect) {
+              include(frag.rect.x + frag.rect.width, frag.rect.y + frag.rect.height);
+            } else {
+              include(frag.x + frag.width, frag.lineTop + frag.lineHeight);
+            }
+          }
+        }
+        for (const child of node.children) scan(child, false);
+      };
+      scan(box, true);
+
+      box._overflow = {
+        clipRect,
+        scrollWidth: Math.max(clipRect.width, maxRight),
+        scrollHeight: Math.max(clipRect.height, maxBottom),
+      };
+    };
+    walk(root);
+  }
+
+  /* position: sticky kutularini normal akistaki taban konumlariyla toplar.
+     Kaydirma sirasinda motor bu kayitlari kullanarak alt agaci kaydirir. */
+  collectSticky(root) {
+    const list = [];
+    const walk = (box) => {
+      /* Metin ve anonim kutular boyama icin ust tarafin stilini kopyalar;
+         yalnizca gercek eleman kutusu sticky katmana girer. */
+      if (box.style.position === 'sticky' && box.el?.nodeType === 1) {
+        const parent = box.parentBox;
+        const basis = parent?.contentHeight ?? this.height;
+        const top = box.style.top === 'auto' ? null : resolvePct(box.style.top, basis);
+        const bottom = box.style.bottom === 'auto' ? null : resolvePct(box.style.bottom, basis);
+        list.push({
+          box,
+          baseY: box.y,
+          top,
+          bottom,
+          limitTop: parent ? parent.contentY : 0,
+          limitBottom: parent ? parent.contentY + parent.contentHeight : this.height,
+          offsetY: 0,
+        });
+      }
+      for (const child of box.children) walk(child);
+    };
+    walk(root);
+    this.sticky = list;
+  }
+
   documentHeight(root) {
     let max = 0;
     const walk = (box) => {
       if (box.fixed) return;
       max = Math.max(max, box.y + box.height + num(box.margin.bottom));
+      /* Kirpan kutunun disina tasan icerik sayfayi buyutmez. */
+      if (box._overflow) return;
       for (const child of box.children) walk(child);
     };
     walk(root);
@@ -2448,27 +2540,37 @@ export function layoutDocument(document, options) {
 }
 
 export function hitTest(layout, pageX, pageY) {
-  const visit = (box) => {
+  const visit = (box, allowSticky) => {
     if (box.style.display === 'none' || box.style.visibility === 'hidden') return null;
     if (box.kind === 'text') return null;
 
-    for (let i = box.children.length - 1; i >= 0; i--) {
-      const found = visit(box.children[i]);
-      if (found) return found;
-    }
+    /* Kirpilan alanin disindaki nokta alt agaca islemez; kutunun kendi
+       cercevesi yine de hedef olabilir. */
+    const clip = box._overflow?.clipRect;
+    const clippedOut = clip && (pageX < clip.x || pageX > clip.x + clip.width
+      || pageY < clip.y || pageY > clip.y + clip.height);
 
-    if (box.lineBoxes?.length) {
-      for (const line of box.lineBoxes) {
-        for (let i = line.fragments.length - 1; i >= 0; i--) {
-          const frag = line.fragments[i];
-          if (frag.type === 'atomic') {
-            if (pageX >= frag.rect.x && pageX <= frag.rect.x + frag.rect.width && pageY >= frag.rect.y && pageY <= frag.rect.y + frag.rect.height) {
-              return frag.el ?? box.el;
-            }
-          } else {
-            const rect = { x: frag.x, y: frag.y, width: frag.width, height: frag.lineHeight };
-            if (pageX >= rect.x && pageX <= rect.x + rect.width && pageY >= frag.lineTop && pageY <= frag.lineTop + rect.height) {
-              return frag.el ?? box.el;
+    if (!clippedOut) {
+      for (let i = box.children.length - 1; i >= 0; i--) {
+        const child = box.children[i];
+        if (!allowSticky && child.style.position === 'sticky') continue;
+        const found = visit(child, allowSticky);
+        if (found) return found;
+      }
+
+      if (box.lineBoxes?.length) {
+        for (const line of box.lineBoxes) {
+          for (let i = line.fragments.length - 1; i >= 0; i--) {
+            const frag = line.fragments[i];
+            if (frag.type === 'atomic') {
+              if (pageX >= frag.rect.x && pageX <= frag.rect.x + frag.rect.width && pageY >= frag.rect.y && pageY <= frag.rect.y + frag.rect.height) {
+                return frag.el ?? box.el;
+              }
+            } else {
+              const rect = { x: frag.x, y: frag.y, width: frag.width, height: frag.lineHeight };
+              if (pageX >= rect.x && pageX <= rect.x + rect.width && pageY >= frag.lineTop && pageY <= frag.lineTop + rect.height) {
+                return frag.el ?? box.el;
+              }
             }
           }
         }
@@ -2480,5 +2582,30 @@ export function hitTest(layout, pageX, pageY) {
     }
     return null;
   };
-  return visit(layout.root);
+
+  /* Sticky katman normal akisin ustunde cizildigi icin once denenir. */
+  const stickyRoots = [];
+  const collect = (box) => {
+    if (box.fixed) return;
+    if (box.style.position === 'sticky') { stickyRoots.push(box); return; }
+    for (const child of box.children) collect(child);
+  };
+  collect(layout.root);
+  for (let i = stickyRoots.length - 1; i >= 0; i--) {
+    const box = stickyRoots[i];
+    let outsideClip = false;
+    for (let parent = box.parentBox; parent; parent = parent.parentBox) {
+      const rect = parent._overflow?.clipRect;
+      if (!rect) continue;
+      if (pageX < rect.x || pageX > rect.x + rect.width
+        || pageY < rect.y || pageY > rect.y + rect.height) {
+        outsideClip = true;
+        break;
+      }
+    }
+    if (outsideClip) continue;
+    const found = visit(box, true);
+    if (found) return found;
+  }
+  return visit(layout.root, false);
 }
