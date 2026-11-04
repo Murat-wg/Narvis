@@ -18,6 +18,23 @@ import { getValidationState } from './validation.js';
 let uid = 0;
 const selectorCache = new Map();
 
+/* Dosya secici icin native FileList'e benzeyen kucuk liste. */
+export class FileList {
+  constructor(files = []) {
+    const list = Array.from(files ?? []);
+    for (let i = 0; i < list.length; i++) this[i] = list[i];
+    this.length = list.length;
+  }
+
+  item(index) {
+    return this[index] ?? null;
+  }
+
+  *[Symbol.iterator]() {
+    for (let i = 0; i < this.length; i++) yield this[i];
+  }
+}
+
 function cachedSelector(text) {
   let parsed = selectorCache.get(text);
   if (!parsed) {
@@ -562,6 +579,10 @@ export class Element extends Node {
       const attr = this.getAttribute('value');
       return attr != null ? attr : String(this.textContent ?? '');
     }
+    if (this.localName === 'input' && controlType(this) === 'file') {
+      const first = this._files?.[0];
+      return first ? 'C:\\fakepath\\' + String(first.name) : '';
+    }
     if (this._value != null) return this._value;
     if (this.localName === 'textarea') return this.textContent;
     if (this.localName === 'button') {
@@ -571,6 +592,14 @@ export class Element extends Node {
     return this.getAttribute('value') ?? '';
   }
   set value(v) {
+    if (this.localName === 'input' && controlType(this) === 'file') {
+      /* Tarayicida bos olmayan deger atamasi hata verir; bos atama secimi siler. */
+      if (v === '' || v == null) {
+        this._files = new FileList();
+        this._markDirty();
+      }
+      return;
+    }
     if (this.localName === 'select') {
       const index = findOptionIndexByValue(this, v);
       if (this.multiple) {
@@ -659,6 +688,13 @@ export class Element extends Node {
     }
     const index = this.selectedIndex;
     return index >= 0 ? [options[index]] : [];
+  }
+
+  /* input[type=file].files: motorun sectigi dosyalar; baslangicta bos liste. */
+  get files() {
+    if (this.localName !== 'input' || controlType(this) !== 'file') return null;
+    if (!(this._files instanceof FileList)) this._files = new FileList(this._files ?? []);
+    return this._files;
   }
 
   get selected() {

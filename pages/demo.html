@@ -766,7 +766,7 @@
         <h2>Form kontrolleri, gerçek girdiyle.</h2>
         <p>Metin kutusuna tıklayıp yaz, <code>Tab</code> ile gez, <code>Enter</code> ile gönder. Select listesi Canvas üzerinde açılır; zorunlu alanlar boşken doğrulama balonu çıkar. Geçerli form gerçek bir POST isteğiyle sunucuya gider.</p>
       </div>
-      <form class="form-demo" id="demoForm" action="form-result.html" method="post">
+      <form class="form-demo" id="demoForm" action="form-result.html" method="post" enctype="multipart/form-data">
         <div class="form-card">
           <h3>Hesap</h3>
           <label class="field">
@@ -825,10 +825,14 @@
             </select>
           </div>
           <label class="field" style="margin-top: 14px">
+            <span class="field-label">Ek dosya (birden fazla seçilebilir)</span>
+            <input class="form-input" id="demoFiles" name="ekler" type="file" multiple>
+          </label>
+          <label class="field" style="margin-top: 14px">
             <span class="field-label">Seçim</span>
             <input class="form-input" id="planOut" type="text" value="plan: yıllık" readonly>
           </label>
-          <p class="form-note">Zorunlu alan boşsa gönderim durur ve ilk geçersiz alan odaklanır. Select'i <strong>Space</strong>/<strong>Enter</strong> ile aç, oklarla gez, <strong>Enter</strong> ile seç. Form geçerliyse yanıt sunucudan gelir ve yeniden çizilir.</p>
+          <p class="form-note">Zorunlu alan boşsa gönderim durur ve ilk geçersiz alan odaklanır. Select'i <strong>Space</strong>/<strong>Enter</strong> ile aç, oklarla gez, <strong>Enter</strong> ile seç. Dosya alanı gerçek yerel dosya seçtirir; form <code>multipart/form-data</code> olarak gönderilir ve sunucu dosya adını/boyutunu yanıtta gösterir.</p>
         </div>
       </form>
     </section>

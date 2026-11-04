@@ -286,6 +286,7 @@ class LayoutEngine {
       else if (type === 'checkbox') box.formKind = 'checkbox';
       else if (type === 'radio') box.formKind = 'radio';
       else if (el.localName === 'textarea') box.formKind = 'textarea';
+      else if (type === 'file') box.formKind = 'file';
       else if (['submit', 'reset', 'button'].includes(type)) box.formKind = 'button';
       else box.formKind = 'text';
     }

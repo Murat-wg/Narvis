@@ -8,8 +8,10 @@ import { readFile } from 'node:fs/promises';
 import { parseDocument } from '../src/html/parser.js';
 import { computeStyles } from '../src/style.js';
 import { layoutDocument } from '../src/layout.js';
-import { collectFormData, selectedOptionIndexes, multiSelectRowHeight, multiSelectRows } from '../src/form.js';
+import { collectFormData, selectedOptionIndexes, multiSelectRowHeight, multiSelectRows, buildFormRequest } from '../src/form.js';
 import { NarvisEngine } from '../src/engine.js';
+import { formFields, parseMultipart, renderFormResult } from '../serve.mjs';
+import { Readable } from 'node:stream';
 
 let failures = 0;
 const assert = (condition, message) => {
@@ -981,6 +983,109 @@ function makeEngineHarness(html, options = {}) {
     && pairs.some(([n, v]) => n === 'konular' && v === 'b'),
     'multiple form verisi: her secili option bir [ad, deger] ciftidir');
   assert(form.checkValidity() === true, 'multiple dogrulama: secim sonrasi gecerli');
+}
+
+/* input[type=file]: files API'si, setFiles, kabuk secici kancasi ve multipart. */
+{
+  let chosen = null;
+  const { engine, drawn } = makeEngineHarness(`<!doctype html><style>body { margin: 0; }</style>
+    <form id="f" action="/form-result.html" method="post" enctype="multipart/form-data">
+      <input id="doc" name="ekler" type="file" multiple>
+    </form>`, { onFileChoose: (input) => { chosen = input; } });
+  const doc = engine.document;
+  const form = doc.getElementById('f');
+  const fileInput = doc.getElementById('doc');
+
+  assert(fileInput.files && fileInput.files.length === 0, 'dosya: baslangicta bos files listesi');
+  assert(fileInput.value === '', 'dosya: secim yokken value bostur');
+
+  /* Tiklama kabuk kancasini cagirir ve odağı dosya kontrolune verir. */
+  const box = fileInput._box;
+  engine.click(box.x + 6, box.y + 6);
+  assert(chosen === fileInput && doc.activeElement === fileInput,
+    'dosya: tiklama onFileChoose kancasini cagirir ve odaklar');
+
+  let changes = 0;
+  fileInput.addEventListener('change', () => { changes += 1; });
+  const bytes = new Uint8Array([0, 1, 2, 255, 254, 10, 13, 26]);
+  const file = new File([bytes], 'rapor.bin', { type: 'application/octet-stream' });
+  engine.setFiles(fileInput, [file]);
+  assert(fileInput.files.length === 1 && fileInput.files[0] === file && fileInput.files.item(0) === file,
+    'dosya: setFiles File nesnesini files listesine yazar');
+  assert(fileInput.value === 'C:\\fakepath\\rapor.bin',
+    'dosya: value sahte yolu dondurur');
+  assert(changes === 1, 'dosya: secim change olayi yayar');
+
+  engine.paintNow();
+  assert(drawn.some((text) => text.includes('Dosya Seç'))
+    && drawn.some((text) => text.includes('rapor.bin')),
+    'dosya: boyama sec dugmesini ve dosya adini cizer');
+
+  const pairs = collectFormData(form);
+  assert(pairs.some(([n, v]) => n === 'ekler' && v === file),
+    'dosya: form verisi File nesnesini tasir');
+
+  const request = buildFormRequest(form, null, 'http://localhost:4777/pages/demo.html');
+  assert(request.method === 'POST' && request.body instanceof FormData,
+    'dosya: multipart istek FormData govdesi kurar');
+  const sent = request.body.get('ekler');
+  assert(sent && sent.name === 'rapor.bin' && sent.size === bytes.length,
+    'dosya: multipart dosya adi ve boyutu korunur');
+  const sentBytes = [...new Uint8Array(await sent.arrayBuffer())];
+  assert(sentBytes.join(',') === [...bytes].join(','),
+    'dosya: multipart ikili icerik byte byte korunur');
+
+  /* Bos deger secimi temizler; form sifirlama da dosyalari siler. */
+  engine.setFiles(fileInput, [file]);
+  engine.resetForm(form);
+  assert(fileInput.files.length === 0 && fileInput.value === '',
+    'dosya: form sifirlama secimi temizler');
+}
+
+/* Sunucu: ikili-güvenli multipart ayristirma ve dosya satiri. */
+{
+  const boundary = '----NarvisTestBoundary42';
+  const head = Buffer.from([
+    `--${boundary}`,
+    'Content-Disposition: form-data; name="ad"',
+    '',
+    'Murat',
+    `--${boundary}`,
+    'Content-Disposition: form-data; name="ekler"; filename="ölçüm.bin"',
+    'Content-Type: application/octet-stream',
+    '',
+    '',
+  ].join('\r\n'), 'utf8');
+  const binary = Buffer.from([0, 1, 2, 255, 254, 10, 13, 26]);
+  const tail = Buffer.from(`--${boundary}--\r\n`, 'utf8');
+  const body = Buffer.concat([head, binary, Buffer.from('\r\n', 'utf8'), tail]);
+
+  const fields = parseMultipart(body, boundary);
+  assert(fields.length === 2 && fields[0][0] === 'ad' && fields[0][1] === 'Murat',
+    'sunucu: multipart metin alanini cozer');
+  const uploaded = fields[1][1];
+  assert(fields[1][0] === 'ekler' && uploaded.filename === 'ölçüm.bin'
+    && uploaded.size === binary.length && uploaded.type === 'application/octet-stream',
+    'sunucu: dosya adi, boyutu ve turu byte olarak korunur');
+
+  const html = renderFormResult(fields, 'POST');
+  assert(html.includes('ölçüm.bin') && html.includes('8 B') && html.includes('Murat'),
+    'sunucu: sonuc sayfasi dosya adini ve boyutunu gosterir');
+
+  const xss = parseMultipart(Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="ekler"; filename="<script>.txt"\r\nContent-Type: text/plain\r\n\r\nx\r\n--${boundary}--\r\n`, 'utf8'),
+  ]), boundary);
+  const xssHtml = renderFormResult(xss, 'POST');
+  assert(!xssHtml.includes('<script>.txt') && xssHtml.includes('&lt;script&gt;.txt'),
+    'sunucu: dosya adi HTML olarak kacislanir');
+
+  /* Gercek tarayici boundary'si buyuk harf icerir; sunucu onu korumali. */
+  const mixedRequest = Readable.from([body]);
+  mixedRequest.method = 'POST';
+  mixedRequest.headers = { 'content-type': `Multipart/Form-Data; boundary=${boundary}` };
+  const mixed = await formFields(mixedRequest, new URL('http://localhost/form-result.html'));
+  assert(mixed.length === 2 && mixed[1][1].filename === 'ölçüm.bin',
+    'sunucu: buyuk harfli boundary degeri korunarak cozulur');
 }
 
 /* Dogrulama, ozel mesaj ve form gonderim istegi (GET/POST). */

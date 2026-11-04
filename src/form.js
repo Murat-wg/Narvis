@@ -5,6 +5,12 @@ export function controlType(el) {
   return String(el?.getAttribute?.('type') || 'text').toLowerCase();
 }
 
+/* File nesnesi benzeri deger mi? (Node testlerinde de calisir.) */
+export function isFileValue(value) {
+  return !!value && typeof value === 'object' && typeof value.name === 'string'
+    && ('size' in value || 'type' in value);
+}
+
 /* input[type=submit/reset] icin varsayilan etiket; value niteligi varsa o.
    button elemaninda etiket iceriktir (value degil). */
 export function controlLabel(el) {
@@ -137,7 +143,11 @@ export function collectFormData(form, submitter = null) {
         pairs.push([name, control.getAttribute('value') ?? '']);
         continue;
       }
-      if (type === 'file') continue;
+      if (type === 'file') {
+        if (!name) continue;
+        for (const file of control.files ?? []) pairs.push([name, file]);
+        continue;
+      }
       if (type === 'checkbox' || type === 'radio') {
         if (!control.checked || !name) continue;
         pairs.push([name, control.getAttribute('value') ?? 'on']);
@@ -192,7 +202,7 @@ export function buildFormRequest(form, submitter, baseUrl) {
   ).toLowerCase();
 
   const params = new URLSearchParams();
-  for (const [name, value] of pairs) params.append(name, value);
+  for (const [name, value] of pairs) params.append(name, isFileValue(value) ? value.name : value);
 
   if (method === 'get') {
     actionUrl.search = params.toString();
@@ -209,7 +219,13 @@ export function buildFormRequest(form, submitter, baseUrl) {
 
   if (enctype === 'multipart/form-data') {
     const body = new FormData();
-    for (const [name, value] of pairs) body.append(name, value);
+    for (const [name, value] of pairs) {
+      if (isFileValue(value) && typeof Blob !== 'undefined' && value instanceof Blob) {
+        body.append(name, value, value.name);
+      } else {
+        body.append(name, isFileValue(value) ? value.name : value);
+      }
+    }
     return {
       url: actionUrl.href,
       method: 'POST',
@@ -225,7 +241,7 @@ export function buildFormRequest(form, submitter, baseUrl) {
       url: actionUrl.href,
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: pairs.map(([name, value]) => `${name}=${value}`).join('\r\n') + '\r\n',
+      body: pairs.map(([name, value]) => `${name}=${isFileValue(value) ? value.name : value}`).join('\r\n') + '\r\n',
       pairs,
       enctype,
     };

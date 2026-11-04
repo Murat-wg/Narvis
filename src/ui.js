@@ -64,6 +64,7 @@ const infoPaint = $('infoPaint');
 const infoViewport = $('infoViewport');
 
 const toastEl = $('toast');
+const filePicker = $('filePicker');
 
 /* ------------------------------------------------------------------ *
  * Durum
@@ -90,6 +91,7 @@ const state = {
 };
 
 let engine = null;
+let pendingFileInput = null;
 let treeRaf = 0;
 let selectionRaf = 0;
 let toastTimer = 0;
@@ -109,6 +111,7 @@ const engineOptions = {
   onConsole: (entry) => appendConsole(entry.level, entry.text, entry.time),
   onNavigation: (href) => handleNavigation(href),
   onFormSubmit: () => setStatus('gönderiliyor…', 'busy'),
+  onFileChoose: (input) => chooseFile(input),
   onFormResponse: (result) => handleFormResponse(result),
   onError: (entry) => {
     state.errors += 1;
@@ -123,6 +126,28 @@ engine = new NarvisEngine(canvas, engineOptions);
 engine.openEditor = openEditor;
 state.viewport = { width: engine.viewport.width, height: engine.viewport.height };
 window.NarvisShell = { engine, state };
+
+/* Gizli yerel dosya secici: sayfadaki input[type=file] tiklamasi acar;
+   secilen gercek File nesneleri motordaki input.files'a yazilir. */
+function chooseFile(input) {
+  if (!input || !filePicker) return;
+  pendingFileInput = input;
+  filePicker.multiple = input.hasAttribute('multiple');
+  const accept = input.getAttribute('accept');
+  if (accept) filePicker.setAttribute('accept', accept);
+  else filePicker.removeAttribute('accept');
+  filePicker.value = '';
+  filePicker.click();
+}
+
+filePicker.addEventListener('change', () => {
+  const target = pendingFileInput;
+  pendingFileInput = null;
+  if (!target) return;
+  const count = filePicker.files?.length ?? 0;
+  engine.setFiles(target, filePicker.files);
+  if (count) setStatus(`${count} dosya seçildi`, 'ok');
+});
 
 /* ------------------------------------------------------------------ *
  * Görünüm boyutu

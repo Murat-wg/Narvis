@@ -114,6 +114,7 @@ function paintFormControl(ctx, box) {
   else if (kind === 'radio') paintRadio(ctx, box);
   else if (kind === 'textarea') paintTextControl(ctx, box, true);
   else if (kind === 'text') paintTextControl(ctx, box, false);
+  else if (kind === 'file') paintFileControl(ctx, box);
   else if (kind === 'select') paintSelectControl(ctx, box);
   else if (kind === 'button' && box.el?.localName !== 'button') {
     /* <button> etiketi cocuk metin olarak normal akista cizilir; yalnizca
@@ -236,6 +237,53 @@ function paintTextControl(ctx, box, multiline) {
 function caretOffset(el, value) {
   const end = Number.isInteger(el?.selectionEnd) ? el.selectionEnd : String(value ?? '').length;
   return Math.max(0, Math.min(String(value ?? '').length, end));
+}
+
+/* input[type=file]: solda "Dosya Seç" dugmesi, sagda secilen adlar. */
+function paintFileControl(ctx, box) {
+  const el = box.el;
+  const style = box.style;
+  const cx = box.contentX;
+  const cy = box.contentY;
+  const cw = Math.max(0, box.contentWidth);
+  const ch = Math.max(0, box.contentHeight);
+  if (cw <= 0 || ch <= 0) return;
+  const disabled = el?.hasAttribute('disabled');
+  const files = el?._files ?? [];
+  const lh = controlLineHeight(style);
+  const fs = style.fontSize || 16;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx, cy, cw, ch);
+  ctx.clip();
+  ctx.font = fontString({ ...style, fontWeight: 400 });
+
+  const buttonLabel = 'Dosya Seç';
+  const buttonW = Math.min(cw, Math.ceil(ctx.measureText(buttonLabel).width) + 18);
+  const buttonH = Math.min(ch, Math.max(18, Math.round(lh + 2)));
+  const by = cy + (ch - buttonH) / 2;
+  ctx.fillStyle = disabled ? '#f2f2f2' : '#efefef';
+  ctx.fillRect(cx, by, buttonW, buttonH);
+  ctx.strokeStyle = disabled ? '#a9a9a9' : '#767676';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx + 0.5, by + 0.5, Math.max(0, buttonW - 1), Math.max(0, buttonH - 1));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = disabled ? '#757575' : '#1b1f24';
+  ctx.fillText(buttonLabel, cx + buttonW / 2, by + buttonH / 2 + 0.5);
+
+  const label = files.length
+    ? Array.from(files, (file) => String(file.name ?? '')).join(', ')
+    : 'Dosya seçilmedi';
+  const tx = cx + buttonW + 6;
+  const maxW = cw - buttonW - 8;
+  if (maxW > 4) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = disabled ? '#9b9b9b' : (files.length ? cssColor(style.color) : '#8a8175');
+    ctx.fillText(ellipsize(ctx, label, maxW), tx, cy + ch / 2 + 0.5);
+  }
+  ctx.restore();
 }
 
 function paintSelection(ctx, el, value, multiline, lines, cx, cy, shift, lh, fs, cw, offset) {

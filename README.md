@@ -83,10 +83,10 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
 - `position: relative`, `absolute`, `fixed`; `z-index` sıralaması.
 - List-item işaretleri (`disc`, `decimal`, …) basit konumla çizilir.
 - Form kontrolleri: `input` (text/search/email/url/tel/password/number,
-  checkbox/radio/submit/reset/button, hidden), `textarea`, `select` ve `button`
-  tarayıcı benzeri doğal görünümle çizilir; `value`, `checked`, `disabled`,
-  `readOnly` ve `required` API'si, tıklamayla işaretleme, radyo grubunda tek
-  seçim, `label` tıklaması ve `form` sıfırlama vardır.
+  checkbox/radio/submit/reset/button, file, hidden), `textarea`, `select` ve
+  `button` tarayıcı benzeri doğal görünümle çizilir; `value`, `checked`,
+  `disabled`, `readOnly` ve `required` API'si, tıklamayla işaretleme, radyo
+  grubunda tek seçim, `label` tıklaması ve `form` sıfırlama vardır.
 - `select`: seçili etiket ve ok Canvas üzerinde çizilir; tekli seçimde liste
   motorun kendi katmanı olarak açılır. Fareyle vurgu/seçim, ok tuşları,
   `Home`/`End`, `PageUp`/`PageDown`, harf ile typeahead, kaydırma çubuğu ve
@@ -97,6 +97,14 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   `PageUp`/`PageDown` odağı taşır (`Ctrl` ile yalnız odak), `Space`/`Enter`
   işareti değiştirir ve typeahead eşleşen satıra gider; liste odakla birlikte
   kaydırılır.
+- `input[type=file]`: "Dosya Seç" düğmesi ve seçilen dosya adları Canvas
+  üzerinde çizilir. Tıklama kabuğun gizli yerel dosya seçicisini açar;
+  `multiple` ve `accept` nitelikleri ona aktarılır. Seçilen gerçek `File`
+  nesneleri `input.files` (FileList benzeri) üzerinden okunur, `value` sahte
+  yol döndürür ve `setFiles` API'si `input`/`change` olaylarını yayar. Form
+  `multipart/form-data` ile gönderildiğinde dosya adı, türü ve baytları
+  korunur; sunucu 12 MB'a kadar gövde kabul eder ve yanıtta dosya boyutunu
+  gösterir.
 - Klavye: metin kutusu ve `textarea` içine yazma/silme, imleç gezinmesi,
   `Shift` ile seçim, `Ctrl+A`, `Ctrl+C/X/V`, `Tab`/`Shift+Tab` odak sırası,
   `Enter` ile gönderme ve `Escape` ile odaktan çıkma. Tek satırlı kontroller
@@ -126,8 +134,8 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
 - Canvas üzerindeki fare ve klavye olayları DOM'a iletilir; `:hover` yeniden çizilir.
 - Form varsayılanları: checkbox/radio işaretleme, radyo grubunda tek seçim,
   `label` tıklaması, metin odağı/imleci/seçimi, `value`/`checked`/`disabled`
-  API'si, `submit`/`reset`/`input`/`change` olayları, `form` sıfırlama,
-  kısıt doğrulaması ve `fetch` tabanlı gönderim.
+  API'si, dosya seçimi (`files`, `setFiles`), `submit`/`reset`/`input`/`change`
+  olayları, `form` sıfırlama, kısıt doğrulaması ve `fetch` tabanlı gönderim.
 - `NarvisShell` kabuğu form yanıtını adres çubuğuna ve gezinme geçmişine yazar;
   geri tuşuyla forma dönülebilir.
 
@@ -194,8 +202,10 @@ form kontrolleri (girdi ölçüleri, checkbox/radio 13×13, textarea satırları
 hidden gizleme, value/checked/disabled API, label/radyo/odak/reset
 etkileşimi), klavye girdisi (yazma, silme, seçim, `Tab`, `Enter`), `select`
 listesi (açma, ok/Enter, fareyle seçim, pasif option, çizim), kısıt doğrulaması
-(Türkçe mesajlar, özel geçerlilik) ve ağ üzerinden form gönderimi (POST/GET
-gövdesi, yanıt geri çağrısı) ve pseudo-element içerikleri
+(Türkçe mesajlar, özel geçerlilik), ağ üzerinden form gönderimi (POST/GET
+gövdesi, yanıt geri çağrısı), dosya girdisi (`FileList`, `setFiles`, sahte
+`value`, `change` olayı, form verisi), ikili-güvenli multipart ayrıştırma ve
+pseudo-element içerikleri
 (::before/::after sıralaması, `content: none`, spesifite, `var()`,
 `counter()` yokluğu) için regresyon kontrolleri bulunur.
 
@@ -215,10 +225,11 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
 - `::before` / `::after` yalnızca `content` metnini destekler; `counter()`,
   `attr()`, `open-quote`/`close-quote` ve `url()` içerikleri üretilmez.
 - Harici CSS ve script dosyaları yüklenmez; yalnızca sayfa içi `<style>` / `<script>`.
-- Formlarda dosya yükleme/dosya seçici ve IME kompozisyonu yok. Çoklu seçim
-  `select[multiple]` ile yerinde liste olarak çalışır; açılır katmanda çoklu
-  işaret kutusu yoktur. `number` dışındaki tarih/sayı biçimleri native
-  denetimlerle sınırlı değildir.
+- Formlarda IME kompozisyonu yok. Çoklu seçim `select[multiple]` ile yerinde
+  liste olarak çalışır; açılır katmanda çoklu işaret kutusu yoktur. Dosya
+  girdisi işletim sisteminin yerel seçicisini kullanır; sayfa kodu dosya
+  seçimini yalnızca `setFiles` ile besleyebilir, sürükle-bırak yükleme yoktur.
+  `number` dışındaki tarih/sayı biçimleri native denetimlerle sınırlı değildir.
 - Doğrulama; `willValidate` ayrıntıları, `setCustomValidity` dışındaki özel
   doğrulama kancaları ve `novalidate` dışındaki form düzeyi seçenekleri
   kapsamaz. Ağ gönderiminde çerez/redirect davranışı `fetch` varsayılanlarına

@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 4777);
@@ -43,8 +43,8 @@ function readRequestBody(request) {
     let size = 0;
     request.on('data', (chunk) => {
       size += chunk.length;
-      if (size > 1024 * 1024) {
-        reject(new Error('Form gövdesi 1 MB sınırını aştı.'));
+      if (size > 12 * 1024 * 1024) {
+        reject(new Error('Form gövdesi 12 MB sınırını aştı.'));
         request.destroy();
         return;
       }
@@ -55,34 +55,72 @@ function readRequestBody(request) {
   });
 }
 
-function parseMultipart(buffer, boundary) {
-  const text = buffer.toString('utf8');
+/* Multipart govdeyi Buffer uzerinde ayirir: dosya icerigi UTF-8'e
+   cevrilmeden byte olarak okunur, boyutu ve turu korunur. */
+export function parseMultipart(buffer, boundary) {
+  const delimiter = Buffer.from(`--${boundary}`);
+  const nextDelimiter = Buffer.from(`\r\n--${boundary}`);
   const out = [];
-  for (const part of text.split(`--${boundary}`)) {
-    const headerEnd = part.indexOf('\r\n\r\n');
-    if (headerEnd < 0) continue;
-    const headers = part.slice(0, headerEnd);
-    const match = /name="([^"]*)"/i.exec(headers);
-    if (!match) continue;
-    let value = part.slice(headerEnd + 4);
-    if (value.endsWith('\r\n')) value = value.slice(0, -2);
-    out.push([match[1], value]);
+  let position = buffer.indexOf(delimiter);
+  while (position >= 0) {
+    const partStart = position + delimiter.length;
+    /* Kapanis sinirinda ("--boundary--") dur. */
+    if (buffer[partStart] === 45 && buffer[partStart + 1] === 45) break;
+    const headerStart = buffer[partStart] === 13 && buffer[partStart + 1] === 10
+      ? partStart + 2 : partStart;
+    const headerEnd = buffer.indexOf('\r\n\r\n', headerStart);
+    if (headerEnd < 0) break;
+    const headers = buffer.slice(headerStart, headerEnd).toString('utf8');
+    const next = buffer.indexOf(nextDelimiter, headerEnd + 4);
+    if (next < 0) break;
+    const content = buffer.slice(headerEnd + 4, next);
+    const nameMatch = /name="([^"]*)"/i.exec(headers);
+    const filenameMatch = /filename="([^"]*)"/i.exec(headers);
+    const typeMatch = /content-type:\s*([^\r\n]+)/i.exec(headers);
+    if (nameMatch) {
+      if (filenameMatch && filenameMatch[1]) {
+        out.push([nameMatch[1], {
+          filename: filenameMatch[1],
+          size: content.length,
+          type: (typeMatch ? typeMatch[1] : 'application/octet-stream').trim(),
+        }]);
+      } else {
+        out.push([nameMatch[1], content.toString('utf8')]);
+      }
+    }
+    position = next + 2; /* CRLF'den sonra sinira gec */
   }
   return out;
 }
 
-async function formFields(request, url) {
+function formatBytes(size) {
+  const bytes = Number(size) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* Boundary degeri harf buyuklugune duyarlidir; yalniz medya turunu
+   kucuk harfe cevir, sinir metnini oldugu gibi koru. */
+export function multipartBoundary(contentType) {
+  const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(String(contentType ?? ''));
+  const value = match ? (match[1] || match[2] || '').trim() : '';
+  return value || null;
+}
+
+export async function formFields(request, url) {
   if (request.method === 'GET' || request.method === 'HEAD') {
     return [...url.searchParams.entries()];
   }
   const body = await readRequestBody(request);
-  const type = String(request.headers['content-type'] || '').toLowerCase();
+  const rawType = String(request.headers['content-type'] || '');
+  const type = rawType.toLowerCase();
   if (type.startsWith('application/x-www-form-urlencoded')) {
     return [...new URLSearchParams(body.toString('utf8')).entries()];
   }
   if (type.startsWith('multipart/form-data')) {
-    const boundary = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(type);
-    return boundary ? parseMultipart(body, boundary[1] || boundary[2]) : [];
+    const boundary = multipartBoundary(rawType);
+    return boundary ? parseMultipart(body, boundary) : [];
   }
   if (type.startsWith('text/plain')) {
     return body.toString('utf8').split(/\r?\n/).filter((line) => line.includes('=')).map((line) => {
@@ -98,18 +136,26 @@ const FIELD_LABELS = {
   eposta: 'E-posta',
   email: 'E-posta',
   konu: 'Konu',
+  konular: 'İlgilendiğiniz konular',
   mesaj: 'Mesaj',
   bulten: 'Bülten',
   subscribe: 'Bülten',
   guncelleme: 'Güncellemeler',
   plan: 'Plan',
   deneyim: 'Narvis\'i nasıl buldunuz?',
+  ekler: 'Ek dosya',
+  dosya: 'Dosya',
 };
 
-function renderFormResult(fields, method) {
+export function renderFormResult(fields, method) {
   const rows = fields.length
     ? fields.map(([name, value]) => {
       const label = FIELD_LABELS[name] || name;
+      if (value && typeof value === 'object' && value.filename != null) {
+        const meta = [formatBytes(value.size), value.type].filter(Boolean)
+          .map((part) => escapeHtml(part)).join(' · ');
+        return `<tr><th>${escapeHtml(label)}</th><td><strong>${escapeHtml(value.filename)}</strong><br><span class="file-meta">${meta}</span></td></tr>`;
+      }
       const text = escapeHtml(value).replace(/\r?\n/g, '<br>');
       return `<tr><th>${escapeHtml(label)}</th><td>${text || '<span class="empty">(boş)</span>'}</td></tr>`;
     }).join('')
@@ -142,6 +188,7 @@ function renderFormResult(fields, method) {
     tr:last-child th, tr:last-child td { border-bottom: 0; }
     th { width: 34%; color: #6a655c; font-weight: 600; }
     .empty { color: #9a9387; font-style: italic; }
+    .file-meta { color: #6a655c; font-size: 13px; }
     .note { margin-top: 18px; color: #8a8175; font-size: 13px; }
     .actions { margin-top: 22px; display: flex; gap: 10px; }
     a.button {
@@ -217,11 +264,18 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, () => {
-  console.log('');
-  console.log('  Narvis 0.1 hazır.');
-  console.log(`  http://localhost:${port}/`);
-  console.log('');
-  console.log('  Durdurmak için Ctrl+C.');
-  console.log('');
-});
+export { server };
+
+/* Testler modulu ice aktarinca sunucu dinlemeye baslamasin. */
+const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+if (isMain) {
+  server.listen(port, () => {
+    console.log('');
+    console.log('  Narvis 0.1 hazır.');
+    console.log(`  http://localhost:${port}/`);
+    console.log('');
+    console.log('  Durdurmak için Ctrl+C.');
+    console.log('');
+  });
+}
+

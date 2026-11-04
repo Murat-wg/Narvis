@@ -5,7 +5,7 @@ import { parseDocument } from './html/parser.js';
 import { computeStyles } from './style.js';
 import { layoutDocument, hitTest } from './layout.js';
 import { paintDocument } from './paint.js';
-import { Event, CustomEvent, KeyboardEvent } from './dom.js';
+import { Event, CustomEvent, KeyboardEvent, FileList } from './dom.js';
 import { clamp, camel } from './util.js';
 import { fontString } from './font.js';
 import { cssColor } from './css/values.js';
@@ -74,6 +74,7 @@ export class NarvisEngine {
     this.onError = options.onError ?? null;
     this.onScroll = options.onScroll ?? null;
     this.onFormSubmit = options.onFormSubmit ?? null;
+    this.onFileChoose = options.onFileChoose ?? null;
     this.onFormResponse = options.onFormResponse ?? null;
 
     this.resize(this.viewport.width, this.viewport.height, { silent: true });
@@ -507,6 +508,14 @@ export class NarvisEngine {
       return;
     }
 
+    /* input[type=file]: kabuk gizli yerel seciciyi acar; secim setFiles'a gelir. */
+    if (name === 'input' && type === 'file') {
+      target.focus();
+      try { this.onFileChoose?.(target); } catch (err) { this.reportError(err, { phase: 'file-choose' }); }
+      this.invalidate();
+      return;
+    }
+
     if (isTextControl(target)) {
       target.focus();
       if (point && original === target) {
@@ -561,6 +570,9 @@ export class NarvisEngine {
         /* null: option'lardaki selected niteligi yeniden gecerli olur. */
         for (const option of optionElements(control)) option._selected = null;
         control._markDirty();
+      } else if (type === 'file') {
+        control._files = new FileList();
+        control._markDirty();
       } else if (!['submit', 'reset', 'button', 'file'].includes(type)) {
         control._value = null;
         control._selStart = null;
@@ -571,6 +583,19 @@ export class NarvisEngine {
     }
     this.invalidate();
     return true;
+  }
+
+  /* input[type=file]: kabuk seciciyi acti, secilen dosyalar buraya yazilir. */
+  setFiles(input, files) {
+    if (!input || input.localName !== 'input' || controlType(input) !== 'file') return null;
+    const list = new FileList(files);
+    input._files = list;
+    input._markDirty();
+    if (this.validation?.el === input) this.hideValidation();
+    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, inputType: 'insertFromPaste' }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    this.invalidate();
+    return list;
   }
 
   /* ---------------------------------------------------------------- *
@@ -640,7 +665,7 @@ export class NarvisEngine {
     if (!el) return false;
     if (el.localName === 'button' || el.localName === 'a' && el.hasAttribute('href')) return true;
     if (el.localName === 'input') {
-      return ['checkbox', 'radio', 'submit', 'reset', 'button', 'image'].includes(controlType(el));
+      return ['checkbox', 'radio', 'submit', 'reset', 'button', 'image', 'file'].includes(controlType(el));
     }
     return el.getAttribute?.('role') === 'button';
   }
