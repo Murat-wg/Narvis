@@ -5,6 +5,7 @@ import { cssColor } from './css/values.js';
 import { fontString } from './font.js';
 import { controlLabel, optionLabel, selectedOption, selectedOptionIndexes, optionElements } from './form.js';
 import { multiSelectRowHeight } from './form.js';
+import { elementScroll, scrollbarMetrics } from './layout.js';
 
 const isPct = (v) => v && typeof v === 'object' && 'pct' in v;
 
@@ -72,6 +73,8 @@ function paintStickyLayer(ctx, root, env) {
     for (const parent of clips) {
       overflowPath(ctx, parent);
       ctx.clip();
+      const s = elementScroll(parent);
+      if (s.x || s.y) ctx.translate(-s.x, -s.y);
     }
     paintBackgrounds(ctx, box, { ...env, paintSticky: true });
     paintTexts(ctx, box, { ...env, paintSticky: true });
@@ -115,12 +118,34 @@ function overflowPath(ctx, box) {
 }
 
 /* Kirpan kutunun icerigini padding box'a hapseder. Kutunun kendi arka
-   plani ve cercevesi bu kirpmadan etkilenmez. */
+   plani ve cercevesi bu kirpmadan etkilenmez. Kaydirma kabi ise icerik
+   guncel scroll ofseti kadar cevrilir. */
 function clipToOverflow(ctx, box) {
   if (!overflowPath(ctx, box)) return false;
   ctx.save();
   ctx.clip();
+  const s = elementScroll(box);
+  if (s.x || s.y) ctx.translate(-s.x, -s.y);
   return true;
+}
+
+/* Overlay kaydirma cubuklari: icerik cevrildikten sonra, kutunun kendi
+   koordinatinda cizilir; boylece icerikle birlikte kaymazlar. */
+function paintScrollbars(ctx, box) {
+  const metrics = scrollbarMetrics(box);
+  if (!metrics) return;
+  ctx.save();
+  for (const bar of [metrics.vertical, metrics.horizontal]) {
+    if (!bar) continue;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+    ctx.fillRect(bar.track.x, bar.track.y, bar.track.width, bar.track.height);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+    const t = bar.thumb;
+    const r = Math.min(3, t.width / 2, t.height / 2);
+    roundedRect(ctx, t.x + 1, t.y + 1, Math.max(0, t.width - 2), Math.max(0, t.height - 2), [r, r, r, r]);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function paintBackgrounds(ctx, box, env) {
@@ -173,6 +198,7 @@ function paintTexts(ctx, box, env) {
     paintTexts(ctx, child, env);
   }
   if (clipped) ctx.restore();
+  paintScrollbars(ctx, box);
 }
 
 /* ------------------------------------------------------------------ *

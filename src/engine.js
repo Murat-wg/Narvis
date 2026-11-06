@@ -3,7 +3,7 @@
 
 import { parseDocument } from './html/parser.js';
 import { computeStyles } from './style.js';
-import { layoutDocument, hitTest } from './layout.js';
+import { layoutDocument, hitTest, elementScroll, scrollbarMetrics } from './layout.js';
 import { paintDocument } from './paint.js';
 import { Event, CustomEvent, KeyboardEvent, FileList } from './dom.js';
 import { clamp, camel } from './util.js';
@@ -99,6 +99,7 @@ export class NarvisEngine {
     this._lastClick = null;
     this._undo = new Map();
     this._redo = new Map();
+    this.ready = null;
     this.document = parseDocument(this.source, { url: this.url });
     this.document.defaultView = this.createWindow();
     this.window = this.document.defaultView;
@@ -107,6 +108,19 @@ export class NarvisEngine {
     this.snapshotFormDefaults();
 
     this.reflow();
+    const token = (this._loadToken = (this._loadToken ?? 0) + 1);
+    const resources = this.externalResources();
+    if (!resources.length) {
+      this.finishLoad();
+    } else {
+      this.document.readyState = 'loading';
+      this.ready = this.loadExternalResources(resources, token)
+        .then(() => { if (this._loadToken === token) this.finishLoad(); });
+    }
+    return this;
+  }
+
+  finishLoad() {
     this.runScripts();
     this.document.readyState = 'complete';
     try {
@@ -116,7 +130,55 @@ export class NarvisEngine {
       this.reportError(err, { phase: 'load' });
     }
     this.reflow();
-    return this;
+    this.ready ??= Promise.resolve();
+  }
+
+  /* Belge sirasinda harici kaynaklar: stil sayfalari ve src'li scriptler. */
+  externalResources() {
+    const out = [];
+    for (const el of this.document.querySelectorAll('link, script')) {
+      if (el.localName === 'link') {
+        const rel = (el.getAttribute('rel') || '').toLowerCase().split(/\s+/);
+        if (rel.includes('stylesheet') && el.getAttribute('href')) out.push(el);
+      } else if (el.getAttribute('src')) {
+        out.push(el);
+      }
+    }
+    return out;
+  }
+
+  /* Kaynaklar belge sirasiyla cekilir: scriptler kendinden onceki stil
+     sayfalari uygulandiktan sonra calisir (tarayici bloklama davranisi). */
+  async loadExternalResources(resources, token) {
+    for (const el of resources) {
+      if (this._loadToken !== token) return;
+      const attr = el.localName === 'link' ? 'href' : 'src';
+      const raw = el.getAttribute(attr);
+      let url = raw;
+      try { url = new URL(raw, this.url).href; } catch { /* goreli olmayan deger oldugu gibi denenir */ }
+      if (!this._fetch) {
+        this.log('warn', `Harici kaynak atlandi (ag yok): ${url}`);
+        continue;
+      }
+      try {
+        const response = await this._fetch(url, { credentials: 'same-origin' });
+        if (this._loadToken !== token) return;
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const text = await response.text();
+        if (this._loadToken !== token) return;
+        if (el.localName === 'link') {
+          el._cssText = text;
+          this.reflow();
+        } else {
+          el._externalCode = text;
+        }
+        el.dispatchEvent(new Event('load', { bubbles: false }));
+      } catch (err) {
+        if (this._loadToken !== token) return;
+        this.log('warn', `Harici kaynak yuklenemedi: ${url} (${err.message})`);
+        el.dispatchEvent(new Event('error', { bubbles: false }));
+      }
+    }
   }
 
   /* HTML'deki ilk isaret durumu: form sifirlama bunlara doner. */
@@ -132,7 +194,9 @@ export class NarvisEngine {
     for (const script of scripts) {
       const src = script.getAttribute('src');
       if (src) {
-        this.log('warn', `Harici script atlandi (ag yok): ${src}`);
+        /* Harici kod yukleme asamasinda cekildi; basarisizsa atlanir. */
+        if (script._externalCode == null) continue;
+        this.executeScript(script._externalCode);
         continue;
       }
       const code = script.textContent;
@@ -237,8 +301,10 @@ export class NarvisEngine {
       const marginTop = Number.isFinite(box.margin?.top) ? box.margin.top : 0;
       const marginBottom = Number.isFinite(box.margin?.bottom) ? box.margin.bottom : 0;
       /* Sticky gorunum alani: sayfa icin viewport, bir kaydirma kabi
-         icin o kabin scrollport'u. Offsetler margin kutusuna uygulanir. */
-      const viewTop = record.scrollport ? record.scrollport.top : this.scrollY;
+         icin o kabin scrollport'u (guncel scrollTop ile). Offsetler
+         margin kutusuna uygulanir. */
+      const portScroll = record.scrollport ? elementScroll(record.scrollport.box).y : 0;
+      const viewTop = record.scrollport ? record.scrollport.top + portScroll : this.scrollY;
       const viewHeight = record.scrollport ? record.scrollport.height : this.viewport.height;
       let targetY = record.baseY;
       if (record.top != null) {
@@ -358,6 +424,87 @@ export class NarvisEngine {
   }
 
   /* ---------------------------------------------------------------- *
+   * Eleman ici kaydirma
+   * ---------------------------------------------------------------- */
+
+  /* Kubun icerik ofsetini yazar, sinirlara kisitlar ve scroll olayi
+     yayilir. Tam yerlesim yerine yalnizca boyama yapilir. */
+  setElementScroll(el, left, top) {
+    const box = el?._box;
+    if (!box?._overflow) return false;
+    const s = elementScroll(box);
+    const x = clamp(Number(left) || 0, 0, s.maxX);
+    const y = clamp(Number(top) || 0, 0, s.maxY);
+    if (Math.abs(x - s.x) < 0.01 && Math.abs(y - s.y) < 0.01) return false;
+    el._scrollLeft = x;
+    el._scrollTop = y;
+    el.dispatchEvent(new Event('scroll', { bubbles: false }));
+    this.paintNow();
+    return true;
+  }
+
+  /* Tekerlek: en icteki kaydirma kabindan baslanir; eksen sinira gelirse
+     kalan miktar dis kaba, en sonunda sayfaya aktarilir. */
+  wheel(x, y, dx, dy) {
+    if (this.selectPopup) this.closeSelect();
+    let el = this.elementAt(x, y);
+    let moved = false;
+    for (let node = el; node && (dx || dy); node = node.parentElement) {
+      const box = node._box;
+      if (!box?._overflow) continue;
+      const s = elementScroll(box);
+      if (!s.maxX && !s.maxY) continue;
+      const nx = clamp(s.x + dx, 0, s.maxX);
+      const ny = clamp(s.y + dy, 0, s.maxY);
+      dx -= nx - s.x;
+      dy -= ny - s.y;
+      if (this.setElementScroll(node, nx, ny)) moved = true;
+    }
+    if (dx || dy) {
+      const beforeX = this.scrollX;
+      const beforeY = this.scrollY;
+      this.scrollBy(dx, dy);
+      if (this.scrollX !== beforeX || this.scrollY !== beforeY) moved = true;
+    }
+    return moved;
+  }
+
+  /* Noktanin altindaki kaydirma cubugu. Dis kabdan ice denenir; cubuklar
+     icerigin ustünde cizildigi icin once onlar kazanir. */
+  scrollbarAt(x, y) {
+    const el = this.elementAt(x, y);
+    if (!el) return null;
+    const chain = [];
+    for (let node = el; node; node = node.parentElement) {
+      if (node._box?._overflow) chain.unshift(node);
+    }
+    let ox = 0;
+    let oy = 0;
+    const px = x + this.scrollX;
+    const py = y + this.scrollY;
+    for (const node of chain) {
+      const metrics = scrollbarMetrics(node._box);
+      if (metrics) {
+        for (const axis of ['vertical', 'horizontal']) {
+          const bar = metrics[axis];
+          if (!bar) continue;
+          const bx = px + ox;
+          const by = py + oy;
+          const t = bar.track;
+          if (bx < t.x || bx > t.x + t.width || by < t.y || by > t.y + t.height) continue;
+          const th = bar.thumb;
+          const onThumb = bx >= th.x && bx <= th.x + th.width && by >= th.y && by <= th.y + th.height;
+          return { el: node, axis, bar, onThumb, offsetX: ox, offsetY: oy };
+        }
+      }
+      const s = elementScroll(node._box);
+      ox += s.x;
+      oy += s.y;
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------- *
    * Etkilesim
    * ---------------------------------------------------------------- */
 
@@ -367,6 +514,20 @@ export class NarvisEngine {
   }
 
   pointerMove(x, y) {
+    /* Kaydirma cubugu tutamaci: fare farki oransal olarak scroll'a cevrilir. */
+    if (this._drag?.scrollbar) {
+      const { el, axis, bar, startX, startY, startValue } = this._drag.scrollbar;
+      const trackLen = axis === 'vertical' ? bar.track.height : bar.track.width;
+      const thumbLen = axis === 'vertical' ? bar.thumb.height : bar.thumb.width;
+      const delta = axis === 'vertical' ? y - startY : x - startX;
+      const value = startValue + delta * (bar.max / Math.max(1, trackLen - thumbLen));
+      const s = elementScroll(el._box);
+      this.setElementScroll(el,
+        axis === 'horizontal' ? value : s.x,
+        axis === 'vertical' ? value : s.y);
+      return el;
+    }
+
     /* Surukleme secimi: odakli metin kontrolunde imlocu tasir. */
     if (this._drag?.selecting && isTextControl(this._drag.el)) {
       const el = this._drag.el;
@@ -399,6 +560,10 @@ export class NarvisEngine {
     const el = this.elementAt(x, y);
     if (el !== this._hovered) {
       this.setHover(el);
+    }
+    if (this.scrollbarAt(x, y)) {
+      this.canvas.style.cursor = 'default';
+      return el;
     }
     let cursor = el?._style?.cursor ?? 'auto';
     if (cursor === 'auto' && isTextControl(el) && !isDisabled(el) && !el.hasAttribute('readonly')) {
@@ -494,6 +659,27 @@ export class NarvisEngine {
     if (!el) {
       this._drag = null;
       return null;
+    }
+
+    /* Kaydirma cubugu: tutamac suruklenir, bos iz bir sayfa atlar. */
+    const bar = this.scrollbarAt(x, y);
+    if (bar) {
+      if (bar.onThumb) {
+        this._drag = { scrollbar: { ...bar, startX: x, startY: y, startValue: bar.bar.value } };
+      } else {
+        const local = bar.axis === 'vertical'
+          ? y + this.scrollY + bar.offsetY - bar.bar.track.y
+          : x + this.scrollX + bar.offsetX - bar.bar.track.x;
+        const center = bar.axis === 'vertical'
+          ? bar.bar.thumb.y - bar.bar.track.y + bar.bar.thumb.height / 2
+          : bar.bar.thumb.x - bar.bar.track.x + bar.bar.thumb.width / 2;
+        const value = bar.bar.value + (local > center ? 1 : -1) * bar.bar.pageSize;
+        const s = elementScroll(bar.el._box);
+        this.setElementScroll(bar.el,
+          bar.axis === 'horizontal' ? value : s.x,
+          bar.axis === 'vertical' ? value : s.y);
+      }
+      return bar.el;
     }
 
     if (isTextControl(el) && !isDisabled(el) && !el.hasAttribute('readonly')) {
@@ -773,6 +959,25 @@ export class NarvisEngine {
     const box = el?._box;
     if (!box) return;
     const margin = 8;
+    /* Once ata kaydirma kaplari: odaklanan iceri gorunur alana cekilir. */
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      const cb = node._box;
+      if (!cb?._overflow) continue;
+      const s = elementScroll(cb);
+      if (!s.maxX && !s.maxY) continue;
+      const r = cb._overflow.clipRect;
+      let left = s.x;
+      let top = s.y;
+      if (box.y - (r.y + top) < margin) top = box.y - r.y - margin;
+      else if (box.y + box.height - (r.y + top) > r.height - margin) {
+        top = box.y + box.height - r.y - r.height + margin;
+      }
+      if (box.x - (r.x + left) < margin) left = box.x - r.x - margin;
+      else if (box.x + box.width - (r.x + left) > r.width - margin) {
+        left = box.x + box.width - r.x - r.width + margin;
+      }
+      this.setElementScroll(node, left, top);
+    }
     let top = this.scrollY;
     if (box.y - top < margin) top = box.y - margin;
     else if (box.y + box.height - top > this.viewport.height - margin) {
@@ -1082,11 +1287,26 @@ export class NarvisEngine {
     return text;
   }
 
+  /* Bir elemanin ata kaydirma kaplarinin toplam ofseti: ekran noktasini
+     icerik koordinatina cevirmek icin eklenir. */
+  _ancestorScroll(el) {
+    let x = 0;
+    let y = 0;
+    for (let node = el?.parentElement; node; node = node.parentElement) {
+      if (!node._box?._overflow) continue;
+      const s = elementScroll(node._box);
+      x += s.x;
+      y += s.y;
+    }
+    return { x, y };
+  }
+
   caretIndexAtPoint(el, x, y) {
     const box = el?._box;
     if (!box) return 0;
     const cx = box.contentX;
     const cy = box.contentY;
+    const off = this._ancestorScroll(el);
     const value = String(el.value ?? '');
     const style = { ...(el._style ?? {}), fontWeight: 400 };
 
@@ -1094,13 +1314,13 @@ export class NarvisEngine {
       const lh = typeof el._style?.lineHeight === 'number' && el._style.lineHeight > 0
         ? el._style.lineHeight : (el._style?.fontSize || 16) * 1.4;
       const lines = value.split('\n');
-      const localY = y + this.scrollY - cy;
+      const localY = y + this.scrollY + off.y - cy;
       const lineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor(localY / lh)));
       let lineStart = 0;
       for (let i = 0; i < lineIndex; i++) lineStart += lines[i].length + 1;
-      return lineStart + this.nearestCaretIndex(lines[lineIndex], x + this.scrollX - cx, style);
+      return lineStart + this.nearestCaretIndex(lines[lineIndex], x + this.scrollX + off.x - cx, style);
     }
-    return this.nearestCaretIndex(value, x + this.scrollX - cx + (el._paintScrollX || 0), style);
+    return this.nearestCaretIndex(value, x + this.scrollX + off.x - cx + (el._paintScrollX || 0), style);
   }
 
   setCaretFromPoint(el, x, y, extend = false) {
@@ -1417,9 +1637,10 @@ export class NarvisEngine {
   multiIndexAtPoint(select, x, y) {
     const { box, rowH, options, scroll } = this.multiMetrics(select);
     if (!box) return -1;
-    const row = Math.floor((y + this.scrollY - box.contentY) / rowH);
+    const off = this._ancestorScroll(select);
+    const row = Math.floor((y + this.scrollY + off.y - box.contentY) / rowH);
     const index = scroll + row;
-    if (x + this.scrollX < box.contentX || x + this.scrollX > box.contentX + box.contentWidth) return -1;
+    if (x + this.scrollX + off.x < box.contentX || x + this.scrollX + off.x > box.contentX + box.contentWidth) return -1;
     if (row < 0 || index < 0 || index >= options.length) return -1;
     return index;
   }

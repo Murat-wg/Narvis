@@ -613,6 +613,8 @@
       .float-quote { float: none; width: auto; margin: 0 0 12px; }
     }
   </style>
+  <link rel="stylesheet" href="demo-ext.css">
+  <script src="demo-ext.js"></script>
 </head>
 <body>
   <header class="site-nav">
@@ -810,6 +812,27 @@
         <div class="overflow-card sticky-card">
           <div class="sticky-bar">Yapışkan başlık · position: sticky</div>
           <p class="sticky-body"><strong>Aşağı kaydır.</strong> Bu kart görünürken başlık üst kenardan 10px aşağıda kalır. Kartın alt sınırına gelince onunla birlikte yukarı çekilir; böylece kapsayıcısından taşmaz. Kart <code>overflow: clip</code> kullanır: taşan metin yine kartın sınırlarında kırpılır, ama <code>clip</code> bir kaydırma kabı oluşturmadığı için başlık sayfa kaydırmasına tutunabilir. <code>overflow: hidden</code> olsaydı başlık kartın kendi kaydırma alanına bağlanır, sayfayla birlikte yapışmazdı.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="scroll">
+      <div class="section-head">
+        <span class="kicker">Kaydırma</span>
+        <h2>Kutunun içi, kendi kaydırma çubuğuyla kayar.</h2>
+        <p><code>overflow: auto</code> taşan içeriği kaydırılabilir yapar: fare tekerleği önce bu kutuyu kaydırır, sınırına gelince sayfaya geçer; tutamak sürüklenir, boş iz tıklanınca bir sayfa atlar. İçerideki <code>position: sticky</code> başlık sayfanın değil bu kutunun kaydırmasına tutunur. <span id="ext-status"></span></p>
+      </div>
+      <div class="scroll-demo">
+        <div class="scroll-head">İç kaydırma · overflow: auto</div>
+        <div class="scroll-body">
+          <p><strong>Bu kutuyu tekerlekle kaydır.</strong> Sağdaki ince çubuk motorun kendi çizimi; tutamacı sürükleyebilir ya da boş izine tıklayabilirsin. Kaydırma durumu elemanın <code>scrollTop</code> alanında tutulur ve yeniden yerleşimlerde korunur.</p>
+          <p>Kaydırma kabı, sticky için görünüm alanıdır: başlık bu kutunun üst kenarında tutunur, kutunun alt sınırına gelince onunla birlikte çekilir. Sayfa kaydırması bu başlığı etkilemez.</p>
+          <p>Tekerlek zinciri: imleç bu kutunun üzerindeyken tekerlek önce kutunun içeriğini tüketir. Kutu sona gelirse kalan miktar dış kaba, en sonunda sayfaya aktarılır — tarayıcadaki zincirleme davranışın aynısı.</p>
+          <p><code>overflow: hidden</code> da programatik olarak kaydırılabilir (<code>el.scrollTop = 120</code>) ama çubuk çizmez; <code>overflow: clip</code> ise yalnızca kırpar, kaydırma kabı oluşturmaz.</p>
+          <p>Çubuklar bindirmeli (overlay) çizilir: yerleşimde yer kaplamaz, padding kutusunun iç kenarına yaslanır ve içerikle birlikte kaymaz. Tutamacın boyu görünen alanın kaydırma alanına oranıdır.</p>
+          <p>Kaydırma her boyamada kırpma yolundan sonra uygulanan bir çeviriyle yapılır: içerik <code>-scrollTop</code> kadar ötelenir, kırpma dikdörtgeni yerinde kalır. İsabet testi de aynı ofseti ters yönde ekler.</p>
+          <p>Bu bölümün stili sayfaya gömülü değil: <code>&lt;link rel="stylesheet" href="demo-ext.css"&gt;</code> ile ayrı bir dosyadan geldi. Motor dosyayı fetch ile çekti ve belge sırasındaki yerine kaskada uyguladı.</p>
+          <p>Bu paragrafı okuyabiliyorsan iç kaydırma çalışıyor demektir. Kutunun sonuna geldiğinde tekerlek sayfayı kaydırmaya devam eder.</p>
         </div>
       </div>
     </section>

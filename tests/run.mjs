@@ -7,7 +7,7 @@ import './layout-smoke.mjs';
 import { readFile } from 'node:fs/promises';
 import { parseDocument } from '../src/html/parser.js';
 import { computeStyles } from '../src/style.js';
-import { layoutDocument, hitTest } from '../src/layout.js';
+import { layoutDocument, hitTest, elementScroll, scrollbarMetrics } from '../src/layout.js';
 import { collectFormData, selectedOptionIndexes, multiSelectRowHeight, multiSelectRows, buildFormRequest } from '../src/form.js';
 import { NarvisEngine } from '../src/engine.js';
 import { formFields, parseMultipart, renderFormResult } from '../serve.mjs';
@@ -1496,6 +1496,243 @@ function makeEngineHarness(html, options = {}) {
   engine.paintNow();
   assert(Math.abs(sticky._box.y - 570) < 0.5,
     'sticky: bottom mesafesi kutuyu ekranin altina ceker');
+}
+
+/* Harici CSS/JS: link ve script src belge sirasiyla cekilir; kaskad
+   sirasi korunur, scriptler stil sayfalarindan sonra calisir. */
+{
+  const order = [];
+  const { engine } = makeEngineHarness(`<!doctype html>
+    <style>#x { color: rgb(1, 1, 1); }</style>
+    <link rel="stylesheet" href="theme.css">
+    <script src="ilk.js"></script>
+    <script>order.push('inline'); document.getElementById('x').setAttribute('data-son', 'evet');</script>
+    <div id="x">merhaba</div>`, {
+    fetchImpl: async (url) => {
+      order.push(`fetch:${new URL(url).pathname}`);
+      const body = url.endsWith('theme.css')
+        ? '#x { color: rgb(9, 9, 9); }'
+        : 'order.push("harici"); window.__ilk = getComputedStyle(document.getElementById("x")).color;';
+      return { ok: true, status: 200, text: async () => body };
+    },
+  });
+  engine.window.order = order;
+  assert(engine.document.readyState === 'loading', 'harici: yukleme sirasinda readyState loading');
+  await engine.ready;
+  const doc = engine.document;
+  assert(order.join(',') === 'fetch:/theme.css,fetch:/ilk.js,harici,inline',
+    'harici: kaynaklar belge sirasiyla cekilir ve scriptler sirayla calisir');
+  assert(doc.getElementById('x')._style.color.join(',') === '9,9,9,1'
+    || String(doc.getElementById('x')._style.color).includes('9'),
+    'harici: link stil sayfasindaki bildirim kaskada girer');
+  assert(doc.defaultView.__ilk != null, 'harici: script kendinden onceki stil sayfasini gorur');
+  assert(doc.getElementById('x').getAttribute('data-son') === 'evet',
+    'harici: inline script DOM uzerinde calisir');
+  assert(engine.document.readyState === 'complete', 'harici: yukleme bitince readyState complete');
+}
+
+/* Harici CSS kaskad sirasi: ayni ozgullukte sonra gelen kazanir. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html>
+    <style>#x { color: rgb(1, 1, 1); }</style>
+    <link rel="stylesheet" href="sonra.css">
+    <div id="x"></div>`, {
+    fetchImpl: async () => ({ ok: true, status: 200, text: async () => '#x { color: rgb(2, 2, 2); }' }),
+  });
+  await engine.ready;
+  const color = engine.document.getElementById('x')._style.color;
+  assert(color[0] === 2, 'harici: stil sayfasi belge sirasinda sonra gelirse kazanir');
+}
+
+/* Harici kaynak hatasi: error olayi yayilir, yukleme devam eder. */
+{
+  const events = [];
+  const { engine } = makeEngineHarness(`<!doctype html>
+    <link rel="stylesheet" href="yok.css">
+    <script src="sonra.js"></script>
+    <script>window.__son = true;</script>`, {
+    fetchImpl: async (url) => url.endsWith('yok.css')
+      ? { ok: false, status: 404, text: async () => '' }
+      : { ok: true, status: 200, text: async () => 'window.__harici = true;' },
+  });
+  engine.document.querySelector('link').addEventListener('error', () => events.push('link-error'));
+  await engine.ready;
+  assert(engine.logs.some((l) => l.level === 'warn' && l.text.includes('yok.css')),
+    'harici: basarisiz kaynak uyari olarak loglanir');
+  assert(engine.document.defaultView.__harici === true && engine.document.defaultView.__son === true,
+    'harici: hata sonraki kaynaklari ve scriptleri durdurmaz');
+}
+
+/* Ag yokken harici kaynaklar atlanir, inline scriptler calisir. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html>
+    <script src="uzak.js"></script>
+    <script>window.__yerel = true;</script>`, { fetchImpl: null });
+  await engine.ready;
+  assert(engine.document.defaultView.__yerel === true,
+    'harici: ag yokken inline scriptler yine calisir');
+  assert(engine.logs.some((l) => l.level === 'warn' && l.text.includes('uzak.js')),
+    'harici: ag yokken harici kaynak uyariyla atlanir');
+}
+
+/* ------------------------------------------------------------------ *
+ * Eleman ici kaydirma: scrollTop/scrollLeft, tekerlek zinciri, cubuk
+ * geometrisi/surukleme ve kaydirma kabindeki sticky.
+ * ------------------------------------------------------------------ */
+
+const scrollHtml = `<!doctype html><style>
+  body { margin: 0; }
+  #sc { width: 200px; height: 100px; overflow: auto; }
+  #a { height: 60px; }
+  #b { height: 60px; }
+  #c { height: 60px; }
+  #tall { height: 2000px; }
+</style><div id="sc"><div id="a"></div><div id="b"></div><div id="c"></div></div>
+<div id="tall"></div>`;
+
+{
+  const { engine } = makeEngineHarness(scrollHtml);
+  const doc = engine.document;
+  const sc = doc.getElementById('sc');
+  const s = elementScroll(sc._box);
+  assert(s.maxY === 80 && s.maxX === 0, 'ickaydirma: tasma miktari scrollHeight - gorunur alan');
+  assert(sc.scrollHeight === 180 && sc.clientHeight === 100,
+    'ickaydirma: scrollHeight/clientHeight olculeri elemandan okunur');
+
+  assert(engine.elementAt(10, 90) === doc.getElementById('b'),
+    'ickaydirma: kaydirmadan once gorunur kutu hedef olur');
+  sc.scrollTop = 50;
+  engine.paintNow();
+  assert(sc.scrollTop === 50, 'ickaydirma: scrollTop yazilir ve okunur');
+  assert(engine.elementAt(10, 90) === doc.getElementById('c'),
+    'ickaydirma: kaydirinca alttaki icerik hedef olur');
+  sc.scrollTop = 500;
+  assert(sc.scrollTop === 80, 'ickaydirma: scrollTop ust sinira kisitlanir');
+  sc.scrollTop = -5;
+  assert(sc.scrollTop === 0, 'ickaydirma: negatif deger sifira kisitlanir');
+
+  let scrollEvents = 0;
+  sc.addEventListener('scroll', () => { scrollEvents++; });
+  engine.setElementScroll(sc, 0, 30);
+  assert(scrollEvents === 1 && sc.scrollTop === 30, 'ickaydirma: scroll olayi yayilir');
+  engine.setElementScroll(sc, 0, 30);
+  assert(scrollEvents === 1, 'ickaydirma: degismeyen kaydirma olay yaymaz');
+
+  sc.scrollTop = 40;
+  doc.getElementById('tall').setAttribute('data-x', '1');
+  assert(sc.scrollTop === 40, 'ickaydirma: yeniden yerlesim kaydirma durumunu korur');
+}
+
+/* Tekerlek: once ic kab, sinirda sayfaya zincir; clip kabi kaydirmaz. */
+{
+  const { engine } = makeEngineHarness(scrollHtml);
+  const sc = engine.document.getElementById('sc');
+  assert(engine.wheel(10, 50, 0, 30) && sc.scrollTop === 30,
+    'ickaydirma: tekerlek once ic kabı kaydirir');
+  assert(engine.scrollY === 0, 'ickaydirma: ic kab tuketen tekerlek sayfayi kaydirmaz');
+  sc.scrollTop = 80;
+  engine.wheel(10, 50, 0, 40);
+  assert(sc.scrollTop === 80 && engine.scrollY === 40,
+    'ickaydirma: sinira gelen tekerlek sayfaya zincirlenir');
+}
+
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #clip { width: 200px; height: 100px; overflow: clip; }
+    #ic { height: 300px; }
+    #tall { height: 2000px; }
+  </style><div id="clip"><div id="ic"></div></div><div id="tall"></div>`);
+  const clip = engine.document.getElementById('clip');
+  clip.scrollTop = 50;
+  engine.wheel(10, 50, 0, 40);
+  assert(elementScroll(clip._box).y === 0 && engine.scrollY === 40,
+    'ickaydirma: overflow clip kaydirma kabi degildir, tekerlek sayfaya gider');
+}
+
+/* Ic ice kaplar: en icteki once tuketir. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #outer { width: 300px; height: 200px; overflow: auto; }
+    #inner { width: 100px; height: 50px; overflow: auto; }
+    #itall { height: 200px; }
+    #otall { height: 600px; }
+  </style><div id="outer"><div id="inner"><div id="itall"></div></div><div id="otall"></div></div>`);
+  const doc = engine.document;
+  engine.wheel(10, 10, 0, 30);
+  assert(doc.getElementById('inner').scrollTop === 30
+    && doc.getElementById('outer').scrollTop === 0,
+    'ickaydirma: ic ice kaplarda en icteki once kaydirilir');
+}
+
+/* Cubuk geometrisi: yalniz scroll/auto ve tasan eksen; hidden cizmez. */
+{
+  const { engine } = makeEngineHarness(scrollHtml);
+  const sc = engine.document.getElementById('sc');
+  const m = scrollbarMetrics(sc._box);
+  assert(m && m.vertical && !m.horizontal, 'ickaydirma: yalniz dikey tasma cubugu vardir');
+  assert(m.vertical.track.x === 192 && m.vertical.track.height === 100,
+    'ickaydirma: cubuk padding kutusunun sag kenarina bindirilir');
+  const thumb = m.vertical.thumb;
+  assert(thumb.height > 20 && thumb.height < 100 && thumb.y === 0,
+    'ickaydirma: tutamac orantili boyutta ve bastadir');
+  sc.scrollTop = 80;
+  const m2 = scrollbarMetrics(sc._box);
+  assert(Math.abs(m2.vertical.thumb.y + m2.vertical.thumb.height - 100) < 0.5,
+    'ickaydirma: son kaydirmada tutamac izin sonundadir');
+
+  const hidden = makeEngineHarness(scrollHtml.replace('overflow: auto', 'overflow: hidden'));
+  hidden.engine.document.getElementById('sc').scrollTop = 30;
+  assert(hidden.engine.document.getElementById('sc').scrollTop === 30
+    && scrollbarMetrics(hidden.engine.document.getElementById('sc')._box) === null,
+    'ickaydirma: hidden programatik kaydirilir ama cubuk cizilmez');
+}
+
+/* Tutamac surukleme ve iz tiklamasi. */
+{
+  const { engine } = makeEngineHarness(scrollHtml);
+  const sc = engine.document.getElementById('sc');
+  const m = scrollbarMetrics(sc._box);
+  const thumbH = m.vertical.thumb.height;
+  engine.pointerDown(196, 10);
+  engine.pointerMove(196, 20);
+  const expected = 10 * (80 / (100 - thumbH));
+  assert(Math.abs(sc.scrollTop - expected) < 0.5,
+    'ickaydirma: tutamac suruklemesi oransal kaydirir');
+  engine.pointerUp(196, 20);
+
+  sc.scrollTop = 0;
+  engine.paintNow();
+  engine.pointerDown(196, 90);
+  assert(sc.scrollTop === 80, 'ickaydirma: iz tiklamasi bir sayfa atlar (sinirda durur)');
+  engine.pointerUp(196, 90);
+}
+
+/* Kaydirma kabi icinde sticky: kabin scrollport\'una tutunur. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #sc { height: 100px; overflow: auto; }
+    #pad { height: 20px; }
+    #s { position: sticky; top: 5px; height: 20px; }
+    #fill { height: 300px; }
+  </style><div id="sc"><div id="pad"></div><div id="s"></div><div id="fill"></div></div>`);
+  const doc = engine.document;
+  const sc = doc.getElementById('sc');
+  const sticky = doc.getElementById('s');
+  engine.paintNow();
+  assert(Math.abs(sticky._box.y - 20) < 0.5, 'ickaydirma: sticky basta taban konumunda');
+  sc.scrollTop = 50;
+  engine.paintNow();
+  assert(Math.abs(sticky._box.y - 55) < 0.5,
+    'ickaydirma: sticky kabin kaydirma alaninin ustunde tutunur');
+  assert(engine.elementAt(10, 10) === sticky,
+    'ickaydirma: kaydirilmis kabin sticky kutusu ekran konumunda hedef olur');
+  sc.scrollTop = 0;
+  engine.paintNow();
+  assert(Math.abs(sticky._box.y - 20) < 0.5,
+    'ickaydirma: kap basa donunce sticky tabanina doner');
 }
 
 if (failures > 0) {

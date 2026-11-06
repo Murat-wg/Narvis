@@ -500,11 +500,11 @@ canvas.addEventListener('cut', (event) => {
 
 canvas.addEventListener('wheel', (event) => {
   if (event.ctrlKey) return;
-  const max = engine.maxScroll();
-  if (max.y <= 0 && max.x <= 0) return;
-  event.preventDefault();
+  const point = canvasPoint(event);
   const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? engine.viewport.height : 1;
-  engine.scrollBy(event.deltaX * scale, event.deltaY * scale);
+  if (engine.wheel(point.x, point.y, event.deltaX * scale, event.deltaY * scale)) {
+    event.preventDefault();
+  }
 }, { passive: false });
 
 /* ------------------------------------------------------------------ *

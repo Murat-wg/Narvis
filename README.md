@@ -7,11 +7,13 @@ CSS kaskadını kendi seçici motoruyla hesaplar, kutuları yerleştirir ve her 
 
 **Sürüm 0.1.** Çekirdek boru hattı tam: HTML ayrıştırma → kaskad/stiller →
 blok/inline/float/flex/grid/tablo yerleşimi → Canvas boyama, pseudo-element
-(`::before`/`::after` `content`) desteğiyle. `overflow` kırpma ve
-`position: sticky` kaydırma davranışı; formlar gerçek klavye girdisi, kısıt
-doğrulaması, dosya seçimi, Canvas üzerinde açılan `select` listesi ve `fetch`
-ile ağ gönderimini destekler. Bilinçli sınırlar aşağıda dürüstçe listelenir;
-üretim tarayıcısı değil, motorun omurgasını gösteren bir çalışmadır.
+(`::before`/`::after` `content`) desteğiyle. `overflow` kırpma ve eleman bazlı
+iç kaydırma (overlay çubuklar, tekerlek zinciri, `scrollTop` API'si),
+`position: sticky` kaydırma davranışı; harici CSS/JS yükleme
+(`<link rel="stylesheet">`, `<script src>`); formlar gerçek klavye girdisi,
+kısıt doğrulaması, dosya seçimi, Canvas üzerinde açılan `select` listesi ve
+`fetch` ile ağ gönderimini destekler. Bilinçli sınırlar aşağıda dürüstçe
+listelenir; üretim tarayıcısı değil, motorun omurgasını gösteren bir çalışmadır.
 
 ```
 HTML metni
@@ -86,14 +88,23 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   Görünür dışındaki değerler alt ağacı padding kutusuna kırpar; `border-radius`
   varsa kırpma yolu kenarlık kalınlığı kadar içeri çekilmiş iç yayı izler.
   Kırpılan içerik sayfa yüksekliğini büyütmez ve kırpma dışındaki noktalar
-  alttaki öğelere geçmez. İç kaydırma çubuğu yoktur.
+  alttaki öğelere geçmez.
+- İç kaydırma: `hidden`/`scroll`/`auto` kutular kaydırma kabıdır.
+  `el.scrollTop`/`scrollLeft` (ve `scrollWidth`/`scrollHeight`/`clientWidth`/
+  `clientHeight`) API'si, `scroll` olayı ve yeniden yerleşimde korunan durum.
+  Fare tekerleği en içteki kapta başlar, eksen sınırına gelince dış kaba ve
+  sayfaya zincirlenir. `scroll`/`auto` tasan eksende bindirmeli (overlay)
+  kaydırma çubuğu çizer: tutamak sürüklenir, boş iz tıklaması bir sayfa atlar;
+  `hidden` çubuk çizmez ama programatik kaydırılır. Çubuklar yerleşimde yer
+  kaplamaz. `clip` kaydırma kabı oluşturmaz.
 - `position: sticky`: kutu normal akıştaki yerini korur; kaydırınca dikey
   `top`/`bottom` mesafesinde tutunur, kapsayıcı kutusunun sınırları içinde
   kalır ve normal içeriğin üstünde çizilir. Offsetler margin kutusuna
   uygulanır; sınırlar margin kadar içeride durur. Görünüm alanını en yakın
-  kaydırma kabı belirler: `overflow: hidden/scroll/auto` bir kaydırma kabı
-  oluşturur (iç kaydırma olmadığı için sticky sayfa kaydırmasına tutunmaz),
-  `overflow: clip` ise yalnızca kırpar ve sticky sayfa kaydırmasıyla çalışır.
+  kaydırma kabı belirler: `overflow: hidden/scroll/auto` kaplarında sticky
+  kabın kendi kaydırmasına tutunur (kabin `scrollTop` değeri görünüm
+  alanını taşır), `overflow: clip` ise yalnızca kırpar ve sticky sayfa
+  kaydırmasıyla çalışır.
   Kaydırma her karede taban konumdan yeniden hesaplanır.
 - List-item işaretleri (`disc`, `decimal`, …) basit konumla çizilir.
 - Form kontrolleri: `input` (text/search/email/url/tel/password/number,
@@ -141,8 +152,21 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   `text/plain`. İstek `fetch` ile gerçek sunucuya gider, dönen HTML motor
   tarafından yeni belge olarak yüklenir.
 
+**Kaynak yükleme**
+- `<link rel="stylesheet" href>` ve `<script src>` dosyaları `fetch` ile
+  çekilir; göreli adresler sayfa URL'sine göre çözülür. Kaynaklar belge
+  sırasıyla işlenir: stil sayfası uygulandığında kaskad belge sırasındaki
+  yerine girer ve yeniden yerleşim tetiklenir; scriptler kendinden önceki
+  stil sayfaları yüklendikten sonra çalışır.
+- Yükleme sırasında `document.readyState` `loading`dir; tüm kaynaklar
+  bitince scriptler çalışır, `DOMContentLoaded`/`load` yayılır ve durum
+  `complete` olur. `engine.ready` promise'ı yüklemenin bitimini bekler.
+- Başarısız kaynak `error` olayı yayar ve konsola uyarı düşürür; yükleme
+  sonraki kaynaklarla devam eder. Ağ yokken harici kaynaklar uyarıyla atlanır.
+
 **Çalışma zamanı**
-- Sayfa içi `<script>` blokları izole bir `window`/`document` ortamında çalışır.
+- Sayfa içi `<script>` blokları ve harici `<script src>` kodları izole bir
+  `window`/`document` ortamında çalışır.
 - DOM değişiklikleri bir sonraki `requestAnimationFrame` karesinde yeniden yerleşim tetikler.
 - `console`, `setTimeout`, `requestAnimationFrame`, `matchMedia`, `scrollTo`, `getComputedStyle`.
 - Canvas üzerindeki fare ve klavye olayları DOM'a iletilir; `:hover` yeniden çizilir.
@@ -190,6 +214,8 @@ src/
   css/                seçiciler, değerler, kural ayrıştırıcı, UA stilleri
 pages/
   demo.html           etkileşimli tanıtım sayfası
+  demo-ext.css        harici stil sayfası demosu (demo.html içinden yüklenir)
+  demo-ext.js         harici script demosu (demo.html içinden yüklenir)
   about.html          mimari notları
 tests/
   run.mjs             tüm testler
@@ -224,7 +250,11 @@ boyama, yuvarlatılmış iç kırpma yayı) ve `position: sticky` (üst/alt tutu
 kapsayıcı sınırı, kaydırınca tabana dönme, kaydırma kabı/`clip` ayrımı,
 margin kutusu offsetleri) ve pseudo-element içerikleri
 (::before/::after sıralaması, `content: none`, spesifite, `var()`,
-`counter()` yokluğu) için regresyon kontrolleri bulunur.
+`counter()` yokluğu) için regresyon kontrolleri bulunur. Harici CSS/JS
+(belge sırası, kaskad sırası, stil→script bloklaması, hata/ağ-yok yolları)
+ve eleman içi kaydırma (`scrollTop` kısıtlama, hit-test ofseti, tekerlek
+zinciri, iç içe kaplar, çubuk geometrisi, tutamak sürükleme, iz tıklaması,
+kaydırma kabındaki sticky) ayrı regresyon bloklarıyla kapsanır.
 
 ## Bilinçli sınırlar
 
@@ -242,7 +272,10 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
   (sıradan satır grubu gibi dizilir).
 - `::before` / `::after` yalnızca `content` metnini destekler; `counter()`,
   `attr()`, `open-quote`/`close-quote` ve `url()` içerikleri üretilmez.
-- Harici CSS ve script dosyaları yüklenmez; yalnızca sayfa içi `<style>` / `<script>`.
+- Harici kaynaklar: `<link rel="stylesheet">` ve klasik `<script src>`
+  yüklenir; `@import`, ES modülleri (`type="module"`), `async`/`defer`
+  ayrımları ve sonradan DOM'a eklenen kaynakların yüklenmesi yoktur.
+  Kaynaklar yalnızca ilk yüklemede, belge sırasıyla çekilir.
 - Formlarda IME kompozisyonu yok. Çoklu seçim `select[multiple]` ile yerinde
   liste olarak çalışır; açılır katmanda çoklu işaret kutusu yoktur. Dosya
   girdisi işletim sisteminin yerel seçicisini kullanır; sayfa kodu dosya
@@ -252,8 +285,9 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
   doğrulama kancaları ve `novalidate` dışındaki form düzeyi seçenekleri
   kapsamaz. Ağ gönderiminde çerez/redirect davranışı `fetch` varsayılanlarına
   bırakılır; istek iptali veya yükleme göstergesi yoktur.
-- Eleman bazlı iç kaydırma (scrollbar) ve animasyonlar yok; `overflow` yalnızca
-  kırpar, kaydırma çubuğu çizmez.
+- Animasyonlar ve geçişler yok. Kaydırma çubukları bindirmeli (overlay)
+  çizilir: yerleşimde yer kaplamaz, `scrollbar-width`/`scrollbar-color`
+  stilleri yoktur. `textarea` kendi iç kaydırmasını çizmez.
 - Sayfa başına tek Canvas; alt bileşenler ayrı katman değildir.
 
 Bu sınırlara rağmen boru hattı gerçektir: ayrıştırma, kaskad, değişkenler, kutu

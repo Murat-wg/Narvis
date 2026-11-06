@@ -217,8 +217,14 @@ export function computeStyles(document, options = {}) {
   };
 
   const authorCSS = [];
-  for (const styleEl of document.querySelectorAll('style')) {
-    authorCSS.push(styleEl.textContent);
+  /* Sayfa sirasi onemli: harici stil sayfasi (link._cssText) bulundugu
+     yerde kaskada girer. */
+  for (const el of document.querySelectorAll('style, link')) {
+    if (el.localName === 'style') authorCSS.push(el.textContent);
+    else if (el._cssText != null
+      && (el.getAttribute('rel') || '').toLowerCase().split(/\s+/).includes('stylesheet')) {
+      authorCSS.push(el._cssText);
+    }
   }
   for (const extra of options.extraStyles ?? []) authorCSS.push(extra);
   const rules = [...UA_RULES];

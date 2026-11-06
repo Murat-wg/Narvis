@@ -564,6 +564,33 @@ export class Element extends Node {
     else this.removeAttribute('hidden');
   }
 
+  /* Icerik kaydirma: durum eleman uzerinde tutulur, yerlesim korunur.
+     Okumada kirpma alanina gore kisitlanir (tarayici davranisi). */
+  get scrollTop() {
+    const raw = Number(this._scrollTop) || 0;
+    const ov = this._box?._overflow;
+    if (!ov) return Math.max(0, raw);
+    return Math.max(0, Math.min(raw, Math.max(0, ov.scrollHeight - ov.clipRect.height)));
+  }
+  set scrollTop(v) {
+    this._scrollTop = Math.max(0, Number(v) || 0);
+    this._markDirty();
+  }
+  get scrollLeft() {
+    const raw = Number(this._scrollLeft) || 0;
+    const ov = this._box?._overflow;
+    if (!ov) return Math.max(0, raw);
+    return Math.max(0, Math.min(raw, Math.max(0, ov.scrollWidth - ov.clipRect.width)));
+  }
+  set scrollLeft(v) {
+    this._scrollLeft = Math.max(0, Number(v) || 0);
+    this._markDirty();
+  }
+  get scrollWidth() { return this._box?._overflow?.scrollWidth ?? this._box?.width ?? 0; }
+  get scrollHeight() { return this._box?._overflow?.scrollHeight ?? this._box?.height ?? 0; }
+  get clientWidth() { return this._box?._overflow?.clipRect.width ?? this._box?.width ?? 0; }
+  get clientHeight() { return this._box?._overflow?.clipRect.height ?? this._box?.height ?? 0; }
+
   /* Form degerleri: value niteligi + yazma icin _value; checked niteligi.
      select/option icin secim durumu _selectedIndex uzerinden tutulur. */
   get value() {
@@ -1052,12 +1079,6 @@ export class Element extends Node {
 
   get offsetWidth() { return Math.round(this._box?.width ?? 0); }
   get offsetHeight() { return Math.round(this._box?.height ?? 0); }
-  get clientWidth() { return Math.round(this._box?.contentWidth ?? 0); }
-  get clientHeight() { return Math.round(this._box?.contentHeight ?? 0); }
-  get scrollWidth() { return this.clientWidth; }
-  get scrollHeight() { return this.clientHeight; }
-  scrollTop = 0;
-  scrollLeft = 0;
 
   scrollIntoView(options = true) {
     const view = this.ownerDocument?.defaultView;

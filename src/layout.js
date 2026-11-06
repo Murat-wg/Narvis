@@ -27,6 +27,66 @@ function isScrollContainer(box) {
     || SCROLL_CONTAINER_OVERFLOW.has(box.style?.overflowY);
 }
 
+/* Kaydirma durumu eleman uzerinde tutulur (_scrollTop/_scrollLeft);
+   boylece yeniden yerlesimde korunur. Degerler her okumada kirpma
+   alanina gore kisitlanir; clip kabi kaydirilamaz. */
+export function elementScroll(box) {
+  const ov = box?._overflow;
+  const el = box?.el;
+  if (!ov || el?.nodeType !== 1 || !isScrollContainer(box)) {
+    return { x: 0, y: 0, maxX: 0, maxY: 0 };
+  }
+  const maxX = SCROLL_CONTAINER_OVERFLOW.has(box.style.overflowX)
+    ? Math.max(0, ov.scrollWidth - ov.clipRect.width) : 0;
+  const maxY = SCROLL_CONTAINER_OVERFLOW.has(box.style.overflowY)
+    ? Math.max(0, ov.scrollHeight - ov.clipRect.height) : 0;
+  return {
+    x: clamp(num(el._scrollLeft), 0, maxX),
+    y: clamp(num(el._scrollTop), 0, maxY),
+    maxX,
+    maxY,
+  };
+}
+
+export const SCROLLBAR_SIZE = 8;
+
+/* Paylasilan cubuk geometrisi: boyama ve fare isabeti ayni olculeri
+   kullanir. Cubuklar padding kutusunun ic kenarina bindirilir (overlay),
+   yerlesimi etkilemez. Yalniz tasan eksen ve scroll/auto cizilir. */
+export function scrollbarMetrics(box) {
+  const ov = box?._overflow;
+  if (!ov || !isScrollContainer(box)) return null;
+  const s = elementScroll(box);
+  const rect = ov.clipRect;
+  const drawY = ['scroll', 'auto'].includes(box.style.overflowY) && s.maxY > 0;
+  const drawX = ['scroll', 'auto'].includes(box.style.overflowX) && s.maxX > 0;
+  if (!drawY && !drawX) return null;
+  const out = { vertical: null, horizontal: null };
+  if (drawY) {
+    const trackH = Math.max(0, rect.height - (drawX ? SCROLLBAR_SIZE : 0));
+    const thumbH = Math.max(20, Math.min(trackH, trackH * rect.height / ov.scrollHeight));
+    out.vertical = {
+      track: { x: rect.x + rect.width - SCROLLBAR_SIZE, y: rect.y, width: SCROLLBAR_SIZE, height: trackH },
+      thumb: { x: rect.x + rect.width - SCROLLBAR_SIZE, y: rect.y + (trackH - thumbH) * (s.y / s.maxY), width: SCROLLBAR_SIZE, height: thumbH },
+      max: s.maxY,
+      value: s.y,
+      pageSize: rect.height,
+    };
+  }
+  if (drawX) {
+    const trackW = Math.max(0, rect.width - (drawY ? SCROLLBAR_SIZE : 0));
+    const thumbW = Math.max(20, Math.min(trackW, trackW * rect.width / ov.scrollWidth));
+    out.horizontal = {
+      track: { x: rect.x, y: rect.y + rect.height - SCROLLBAR_SIZE, width: trackW, height: SCROLLBAR_SIZE },
+      thumb: { x: rect.x + (trackW - thumbW) * (s.x / s.maxX), y: rect.y + rect.height - SCROLLBAR_SIZE, width: thumbW, height: SCROLLBAR_SIZE },
+      max: s.maxX,
+      value: s.x,
+      pageSize: rect.width,
+    };
+  }
+  return out;
+}
+
 function isPre(style) {
   return style.whiteSpace === 'pre' || style.whiteSpace === 'pre-wrap' || style.whiteSpace === 'pre-line';
 }
@@ -2418,6 +2478,7 @@ class LayoutEngine {
       }
       if (b._segments) for (const seg of b._segments) { seg.x += dx; seg.y += dy; }
       if (b._fragments) for (const f of b._fragments) { f.x += dx; f.y += dy; }
+      if (b._overflow?.clipRect) { b._overflow.clipRect.x += dx; b._overflow.clipRect.y += dy; }
       for (const child of b.children) walk(child);
     };
     walk(box);
@@ -2513,13 +2574,13 @@ class LayoutEngine {
         const basis = parent?.contentHeight ?? this.height;
         const top = box.style.top === 'auto' ? null : resolvePct(box.style.top, basis);
         const bottom = box.style.bottom === 'auto' ? null : resolvePct(box.style.bottom, basis);
-        /* En yakin kaydirma kabi sticky gorunum alanini belirler. Icerik
-           kaydirma desteklenmedigi icin boyle bir kabin scrollTop degeri
-           sifirdir; sticky sayfa kaydirmasiyla birlikte hareket etmez. */
+        /* En yakin kaydirma kabi sticky gorunum alanini belirler. Motor,
+           kabin guncel scrollTop degerini bu kutudan okuyur. */
         let scrollport = null;
         for (let ancestor = parent; ancestor; ancestor = ancestor.parentBox) {
           if (!isScrollContainer(ancestor)) continue;
           scrollport = {
+            box: ancestor,
             top: ancestor.y + ancestor.border.top,
             height: Math.max(0, ancestor.height - ancestor.border.top - ancestor.border.bottom),
           };
@@ -2562,21 +2623,26 @@ export function layoutDocument(document, options) {
 }
 
 export function hitTest(layout, pageX, pageY) {
-  const visit = (box, allowSticky) => {
+  /* px/py kutunun kendi koordinatindaki noktadir; kaydirma kabina
+     girerken icerik koordinatina (+scroll) cevrilir. */
+  const visit = (box, allowSticky, px, py) => {
     if (box.style.display === 'none' || box.style.visibility === 'hidden') return null;
     if (box.kind === 'text') return null;
 
     /* Kirpilan alanin disindaki nokta alt agaca islemez; kutunun kendi
        cercevesi yine de hedef olabilir. */
     const clip = box._overflow?.clipRect;
-    const clippedOut = clip && (pageX < clip.x || pageX > clip.x + clip.width
-      || pageY < clip.y || pageY > clip.y + clip.height);
+    const clippedOut = clip && (px < clip.x || px > clip.x + clip.width
+      || py < clip.y || py > clip.y + clip.height);
 
     if (!clippedOut) {
+      const s = elementScroll(box);
+      const cx = px + s.x;
+      const cy = py + s.y;
       for (let i = box.children.length - 1; i >= 0; i--) {
         const child = box.children[i];
         if (!allowSticky && child.style.position === 'sticky') continue;
-        const found = visit(child, allowSticky);
+        const found = visit(child, allowSticky, cx, cy);
         if (found) return found;
       }
 
@@ -2585,12 +2651,12 @@ export function hitTest(layout, pageX, pageY) {
           for (let i = line.fragments.length - 1; i >= 0; i--) {
             const frag = line.fragments[i];
             if (frag.type === 'atomic') {
-              if (pageX >= frag.rect.x && pageX <= frag.rect.x + frag.rect.width && pageY >= frag.rect.y && pageY <= frag.rect.y + frag.rect.height) {
+              if (cx >= frag.rect.x && cx <= frag.rect.x + frag.rect.width && cy >= frag.rect.y && cy <= frag.rect.y + frag.rect.height) {
                 return frag.el ?? box.el;
               }
             } else {
               const rect = { x: frag.x, y: frag.y, width: frag.width, height: frag.lineHeight };
-              if (pageX >= rect.x && pageX <= rect.x + rect.width && pageY >= frag.lineTop && pageY <= frag.lineTop + rect.height) {
+              if (cx >= rect.x && cx <= rect.x + rect.width && cy >= frag.lineTop && cy <= frag.lineTop + rect.height) {
                 return frag.el ?? box.el;
               }
             }
@@ -2599,7 +2665,7 @@ export function hitTest(layout, pageX, pageY) {
       }
     }
 
-    if (pageX >= box.x && pageX <= box.x + box.width && pageY >= box.y && pageY <= box.y + box.height) {
+    if (px >= box.x && px <= box.x + box.width && py >= box.y && py <= box.y + box.height) {
       return box.el;
     }
     return null;
@@ -2616,18 +2682,27 @@ export function hitTest(layout, pageX, pageY) {
   for (let i = stickyRoots.length - 1; i >= 0; i--) {
     const box = stickyRoots[i];
     let outsideClip = false;
-    for (let parent = box.parentBox; parent; parent = parent.parentBox) {
+    let ax = pageX;
+    let ay = pageY;
+    const ancestors = [];
+    for (let parent = box.parentBox; parent; parent = parent.parentBox) ancestors.push(parent);
+    /* Dis kabdan ice: kirpma kontrolu sayfa noktasindan, sticky'nin kendi
+       koordinati ise ata kaydirma toplamlari eklenerek denenir. */
+    for (let j = ancestors.length - 1; j >= 0; j--) {
+      const parent = ancestors[j];
       const rect = parent._overflow?.clipRect;
-      if (!rect) continue;
-      if (pageX < rect.x || pageX > rect.x + rect.width
-        || pageY < rect.y || pageY > rect.y + rect.height) {
+      if (rect && (ax < rect.x || ax > rect.x + rect.width
+        || ay < rect.y || ay > rect.y + rect.height)) {
         outsideClip = true;
         break;
       }
+      const s = elementScroll(parent);
+      ax += s.x;
+      ay += s.y;
     }
     if (outsideClip) continue;
-    const found = visit(box, true);
+    const found = visit(box, true, ax, ay);
     if (found) return found;
   }
-  return visit(layout.root, false);
+  return visit(layout.root, false, pageX, pageY);
 }
