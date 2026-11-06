@@ -234,15 +234,22 @@ export class NarvisEngine {
 
     for (const record of sticky) {
       const box = record.box;
+      const marginTop = Number.isFinite(box.margin?.top) ? box.margin.top : 0;
+      const marginBottom = Number.isFinite(box.margin?.bottom) ? box.margin.bottom : 0;
+      /* Sticky gorunum alani: sayfa icin viewport, bir kaydirma kabi
+         icin o kabin scrollport'u. Offsetler margin kutusuna uygulanir. */
+      const viewTop = record.scrollport ? record.scrollport.top : this.scrollY;
+      const viewHeight = record.scrollport ? record.scrollport.height : this.viewport.height;
       let targetY = record.baseY;
       if (record.top != null) {
-        targetY = Math.max(targetY, this.scrollY + record.top);
+        targetY = Math.max(targetY, viewTop + record.top + marginTop);
       }
       if (record.bottom != null) {
-        targetY = Math.min(targetY, this.scrollY + this.viewport.height - record.bottom - box.height);
+        targetY = Math.min(targetY,
+          viewTop + viewHeight - record.bottom - box.height - marginBottom);
       }
-      const minY = record.limitTop;
-      const maxY = Math.max(minY, record.limitBottom - box.height);
+      const minY = record.limitTop + marginTop;
+      const maxY = Math.max(minY, record.limitBottom - box.height - marginBottom);
       targetY = Math.min(Math.max(targetY, minY), maxY);
       const dy = targetY - box.y;
       if (Math.abs(dy) > 0.01) {

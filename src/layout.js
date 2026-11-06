@@ -18,6 +18,15 @@ function isOutOfFlow(box) {
   return box.style.position === 'absolute' || box.style.position === 'fixed';
 }
 
+/* Kaydirma kabi: hidden/scroll/auto. clip yalnizca kirpar, yeni bir
+   kaydirma kabi olusturmaz; sticky bu ayrimi bilmek zorundadir. */
+const SCROLL_CONTAINER_OVERFLOW = new Set(['hidden', 'scroll', 'auto']);
+
+function isScrollContainer(box) {
+  return SCROLL_CONTAINER_OVERFLOW.has(box.style?.overflowX)
+    || SCROLL_CONTAINER_OVERFLOW.has(box.style?.overflowY);
+}
+
 function isPre(style) {
   return style.whiteSpace === 'pre' || style.whiteSpace === 'pre-wrap' || style.whiteSpace === 'pre-line';
 }
@@ -2504,11 +2513,24 @@ class LayoutEngine {
         const basis = parent?.contentHeight ?? this.height;
         const top = box.style.top === 'auto' ? null : resolvePct(box.style.top, basis);
         const bottom = box.style.bottom === 'auto' ? null : resolvePct(box.style.bottom, basis);
+        /* En yakin kaydirma kabi sticky gorunum alanini belirler. Icerik
+           kaydirma desteklenmedigi icin boyle bir kabin scrollTop degeri
+           sifirdir; sticky sayfa kaydirmasiyla birlikte hareket etmez. */
+        let scrollport = null;
+        for (let ancestor = parent; ancestor; ancestor = ancestor.parentBox) {
+          if (!isScrollContainer(ancestor)) continue;
+          scrollport = {
+            top: ancestor.y + ancestor.border.top,
+            height: Math.max(0, ancestor.height - ancestor.border.top - ancestor.border.bottom),
+          };
+          break;
+        }
         list.push({
           box,
           baseY: box.y,
           top,
           bottom,
+          scrollport,
           limitTop: parent ? parent.contentY : 0,
           limitBottom: parent ? parent.contentY + parent.contentHeight : this.height,
           offsetY: 0,

@@ -686,14 +686,24 @@ function makeEngineHarness(html, options = {}) {
   globalThis.cancelAnimationFrame = () => {};
   const drawn = [];
   const clips = [];
+  const clipPaths = [];
   let pendingRect = null;
+  let pathStart = null;
+  let pathCurved = false;
   const fakeCtx = () => ({
     setTransform() {}, clearRect() {}, save() {}, restore() {}, translate() {},
-    fillRect() {}, strokeRect() {}, beginPath() {}, closePath() {}, moveTo() {},
+    fillRect() {}, strokeRect() {},
+    beginPath() { pendingRect = null; pathStart = null; pathCurved = false; },
+    closePath() {}, moveTo(x, y) { if (!pathStart) pathStart = { x, y }; },
     lineTo() {}, arc() {}, stroke() {}, fill() {},
     rect(x, y, width, height) { pendingRect = { x, y, width, height }; },
-    clip() { if (pendingRect) { clips.push(pendingRect); pendingRect = null; } },
-    quadraticCurveTo() {}, bezierCurveTo() {}, ellipse() {}, setLineDash() {},
+    clip() {
+      if (pendingRect) { clips.push(pendingRect); pendingRect = null; }
+      if (pathCurved) clipPaths.push({ start: pathStart, curved: true });
+      pathStart = null;
+      pathCurved = false;
+    },
+    quadraticCurveTo() { pathCurved = true; }, bezierCurveTo() {}, ellipse() {}, setLineDash() {},
     createLinearGradient() { return { addColorStop() {} }; },
     createRadialGradient() { return { addColorStop() {} }; },
     fillText(text) { drawn.push(String(text)); },
@@ -705,7 +715,7 @@ function makeEngineHarness(html, options = {}) {
   const canvas = { width: 0, height: 0, style: {}, getContext: fakeCtx };
   const engine = new NarvisEngine(canvas, { width: 800, height: 600, ...options });
   engine.load(html, { url: 'test://form-engine' });
-  return { engine, drawn, clips };
+  return { engine, drawn, clips, clipPaths };
 }
 
 /* select API'si + olculer. */
@@ -1397,6 +1407,22 @@ function makeEngineHarness(html, options = {}) {
     'overflow: boyama padding box kirpmasi uygular');
 }
 
+/* overflow boyama: border-radius ic kirpma yoluna da yansir. */
+{
+  const { engine, clipPaths } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #clip { width: 100px; height: 50px; padding: 5px; border: 2px solid #000;
+      border-radius: 12px; overflow: hidden; }
+    #inner { width: 300px; height: 300px; background-color: #f00; }
+  </style><div id="clip"><div id="inner"></div></div>`);
+  engine.paintNow();
+  const rect = engine.document.getElementById('clip')._box._overflow.clipRect;
+  assert(clipPaths.some((p) => p.start
+    && Math.abs(p.start.x - (rect.x + 10)) < 0.5
+    && Math.abs(p.start.y - rect.y) < 0.5),
+    'overflow: yuvarlatilmis cerceve ic kirpma yayina uyar');
+}
+
 /* position: sticky: akista kalir, kaydirinca ust sinirda tutunur ve
    kapsayici kutusunun disina cikmaz. */
 {
@@ -1427,13 +1453,44 @@ function makeEngineHarness(html, options = {}) {
     'sticky: geri kaydirinca ayni top mesafesine doner');
 }
 
+/* sticky: en yakin kaydirma kabi gorunum alanini belirler; clip kabı
+   sayilmaz. Offsetler margin kutusuna uygulanir. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><style>
+    body { margin: 0; }
+    #hiddenWrap { height: 300px; overflow: hidden; }
+    #hiddenSticky { position: sticky; top: 10px; height: 20px; }
+    #clipWrap { height: 300px; overflow: clip; }
+    #clipSticky { position: sticky; top: 10px; height: 20px; margin: 10px; }
+    #tall { height: 2000px; }
+  </style>
+    <div id="hiddenWrap"><div id="hiddenSticky"></div></div>
+    <div id="clipWrap"><div id="clipSticky"></div></div>
+    <div id="tall"></div>`);
+  const doc = engine.document;
+  const hidden = doc.getElementById('hiddenSticky');
+  const clipped = doc.getElementById('clipSticky');
+  engine.paintNow();
+  engine.scrollTo({ top: 400, left: 0 });
+  assert(Math.abs(hidden._box.y - 10) < 0.5,
+    'sticky: overflow hidden kabi sayfa kaydirmasina tutunmaz');
+  assert(Math.abs(clipped._box.y - 420) < 0.5,
+    'sticky: overflow clip kabi sayfa kaydirmasina tutunur ve margin eklenir');
+  engine.scrollTo({ top: 1000, left: 0 });
+  assert(Math.abs(hidden._box.y - 10) < 0.5,
+    'sticky: kaydirma kabi icinde taban konumda kalir');
+  assert(Math.abs(clipped._box.y - 570) < 0.5,
+    'sticky: alt sinir margin kadar iceride kalir');
+}
+
 /* position: sticky bottom: normalde ekranin altinda kalan kutu yukari tutunur. */
 {
   const { engine } = makeEngineHarness(`<!doctype html><style>
     body { margin: 0; }
     #wrap { height: 2000px; }
-    #sticky { position: sticky; bottom: 10px; height: 20px; margin-top: 1900px; }
-  </style><div id="wrap"><div id="sticky"></div></div>`);
+    #before { height: 1900px; }
+    #sticky { position: sticky; bottom: 10px; height: 20px; }
+  </style><div id="wrap"><div id="before"></div><div id="sticky"></div></div>`);
   const doc = engine.document;
   const sticky = doc.getElementById('sticky');
   engine.paintNow();

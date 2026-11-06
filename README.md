@@ -83,13 +83,18 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   shrink-to-fit genişlik, yüzen bölge (BFC) kuralı. Flex/grid öğelerinde float yok sayılır.
 - `position: relative`, `absolute`, `fixed`, `sticky`; `z-index` sıralaması.
 - `overflow`: `visible`/`hidden`/`clip`/`scroll`/`auto` ve iki değerli kısayol.
-  Görünür dışındaki değerler alt ağacı padding kutusuna kırpar; kırpılan içerik
-  sayfa yüksekliğini büyütmez ve kırpma dışındaki noktalar alttaki öğelere
-  geçmez. İç kaydırma çubuğu yoktur.
-- `position: sticky`: kutu normal akıştaki yerini korur; sayfa kaydıkça dikey
+  Görünür dışındaki değerler alt ağacı padding kutusuna kırpar; `border-radius`
+  varsa kırpma yolu kenarlık kalınlığı kadar içeri çekilmiş iç yayı izler.
+  Kırpılan içerik sayfa yüksekliğini büyütmez ve kırpma dışındaki noktalar
+  alttaki öğelere geçmez. İç kaydırma çubuğu yoktur.
+- `position: sticky`: kutu normal akıştaki yerini korur; kaydırınca dikey
   `top`/`bottom` mesafesinde tutunur, kapsayıcı kutusunun sınırları içinde
-  kalır ve normal içeriğin üstünde çizilir. Kaydırma her karede taban
-  konumdan yeniden hesaplanır.
+  kalır ve normal içeriğin üstünde çizilir. Offsetler margin kutusuna
+  uygulanır; sınırlar margin kadar içeride durur. Görünüm alanını en yakın
+  kaydırma kabı belirler: `overflow: hidden/scroll/auto` bir kaydırma kabı
+  oluşturur (iç kaydırma olmadığı için sticky sayfa kaydırmasına tutunmaz),
+  `overflow: clip` ise yalnızca kırpar ve sticky sayfa kaydırmasıyla çalışır.
+  Kaydırma her karede taban konumdan yeniden hesaplanır.
 - List-item işaretleri (`disc`, `decimal`, …) basit konumla çizilir.
 - Form kontrolleri: `input` (text/search/email/url/tel/password/number,
   checkbox/radio/submit/reset/button, file, hidden), `textarea`, `select` ve
@@ -215,8 +220,9 @@ listesi (açma, ok/Enter, fareyle seçim, pasif option, çizim), kısıt doğrul
 gövdesi, yanıt geri çağrısı), dosya girdisi (`FileList`, `setFiles`, sahte
 `value`, `change` olayı, form verisi), ikili-güvenli multipart ayrıştırma,
 `overflow` kırpma (padding kutusu, kaydırma alanı, sayfa yüksekliği, hitTest,
-boyama) ve `position: sticky` (üst/alt tutunma, kapsayıcı sınırı, kaydırınca
-tabana dönme) ve pseudo-element içerikleri
+boyama, yuvarlatılmış iç kırpma yayı) ve `position: sticky` (üst/alt tutunma,
+kapsayıcı sınırı, kaydırınca tabana dönme, kaydırma kabı/`clip` ayrımı,
+margin kutusu offsetleri) ve pseudo-element içerikleri
 (::before/::after sıralaması, `content: none`, spesifite, `var()`,
 `counter()` yokluğu) için regresyon kontrolleri bulunur.
 

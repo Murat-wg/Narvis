@@ -66,12 +66,11 @@ function paintStickyLayer(ctx, root, env) {
   for (const box of roots) {
     const clips = [];
     for (let parent = box.parentBox; parent; parent = parent.parentBox) {
-      if (parent._overflow) clips.push(parent._overflow.clipRect);
+      if (parent._overflow) clips.push(parent);
     }
     ctx.save();
-    for (const rect of clips) {
-      ctx.beginPath();
-      ctx.rect(rect.x, rect.y, Math.max(0, rect.width), Math.max(0, rect.height));
+    for (const parent of clips) {
+      overflowPath(ctx, parent);
       ctx.clip();
     }
     paintBackgrounds(ctx, box, { ...env, paintSticky: true });
@@ -88,14 +87,38 @@ function alphaFor(box) {
   return Math.max(0, Math.min(1, a));
 }
 
+/* Padding kutusunun ic yaricapi: dis yaricap, kenarlik kalinligi kadar
+   iceri cekilir. Boylece kirpma yuvarlatilmis cerceveyi takip eder. */
+function overflowClipRadii(box) {
+  const radii = resolveRadii(box);
+  const b = box.border;
+  return [
+    Math.max(0, radii[0] - Math.max(b.top, b.left)),
+    Math.max(0, radii[1] - Math.max(b.top, b.right)),
+    Math.max(0, radii[2] - Math.max(b.bottom, b.right)),
+    Math.max(0, radii[3] - Math.max(b.bottom, b.left)),
+  ];
+}
+
+function overflowPath(ctx, box) {
+  const rect = box._overflow?.clipRect;
+  if (!rect) return false;
+  const width = Math.max(0, rect.width);
+  const height = Math.max(0, rect.height);
+  const radii = overflowClipRadii(box);
+  if (radii.some((r) => r > 0.01)) roundedRect(ctx, rect.x, rect.y, width, height, radii);
+  else {
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, width, height);
+  }
+  return true;
+}
+
 /* Kirpan kutunun icerigini padding box'a hapseder. Kutunun kendi arka
    plani ve cercevesi bu kirpmadan etkilenmez. */
 function clipToOverflow(ctx, box) {
-  const rect = box._overflow?.clipRect;
-  if (!rect) return false;
+  if (!overflowPath(ctx, box)) return false;
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(rect.x, rect.y, Math.max(0, rect.width), Math.max(0, rect.height));
   ctx.clip();
   return true;
 }
