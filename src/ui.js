@@ -1,18 +1,23 @@
-// Narvis kabuğu: motoru canvas'a bağlar, gezinme, kaynak düzenleyici,
-// DOM/stil denetçisi ve konsolu yönetir. Motorun kendisi src/engine.js'te.
+// Narvis kabuğu: sekmeli tarayıcı arayüzü. Her sekmenin kendi canvas'ı,
+// motoru, geçmişi ve konsolu vardır; araç çubuğu/denetçi etkin sekmeyi izler.
+// Motorun kendisi src/engine.js'te.
 
 import { NarvisEngine } from './engine.js';
 import { cssColor } from './css/values.js';
 
 const $ = (id) => document.getElementById(id);
 
-const canvas = $('viewport');
 const stage = $('stage');
 const stageWrap = $('stageWrap');
 const selection = $('selection');
 const hoverRing = $('hoverRing');
 const scrollRail = $('scrollRail');
 const scrollThumb = $('scrollThumb');
+
+const tabStrip = $('tabStrip');
+const newTabBtn = $('newTabBtn');
+const bookmarksBar = $('bookmarksBar');
+const bookmarkBtn = $('bookmarkBtn');
 
 const addressForm = $('addressForm');
 const addressInput = $('addressInput');
@@ -66,72 +71,264 @@ const infoViewport = $('infoViewport');
 const toastEl = $('toast');
 const filePicker = $('filePicker');
 
+const HOME_PAGE = 'pages/demo.html';
+const START_PAGE = 'pages/start.html';
+
 /* ------------------------------------------------------------------ *
- * Durum
+ * Sekme durumu
  * ------------------------------------------------------------------ */
 
-const state = {
-  page: 'pages/demo.html',
-  source: '',
-  fetchedSource: '',
-  history: [],
-  historyIndex: -1,
-  preset: 'desktop',
-  inspect: false,
-  selected: null,
-  hoverEl: null,
-  expanded: new Set(),
-  lastNodes: -1,
-  lastBoxes: -1,
-  devtoolsOpen: true,
-  editorOpen: false,
-  filter: '',
-  errors: 0,
-  viewport: { width: 900, height: 640 },
-};
+function makeTabState() {
+  return {
+    page: '',
+    source: '',
+    fetchedSource: '',
+    history: [],
+    historyIndex: -1,
+    preset: 'desktop',
+    inspect: false,
+    selected: null,
+    hoverEl: null,
+    expanded: new Set(),
+    lastNodes: -1,
+    lastBoxes: -1,
+    devtoolsOpen: true,
+    editorOpen: false,
+    filter: '',
+    errors: 0,
+    viewport: { width: 900, height: 640 },
+  };
+}
 
+const tabs = [];
+let activeTab = null;
+let tabSeq = 0;
+
+/* Etkin sekmenin alanları; kabuğun tamamı bu üçlü üzerinden çalışır. */
+let canvas = null;
 let engine = null;
-let pendingFileInput = null;
+let state = null;
+
+let pendingFileInput = null; // { tab, input }
 let treeRaf = 0;
 let selectionRaf = 0;
 let toastTimer = 0;
-let moveRaf = 0;
-let lastPointer = { x: 0, y: 0 };
-let consoleTotal = 0;
 
-/* ------------------------------------------------------------------ *
- * Motor
- * ------------------------------------------------------------------ */
+function createTab({ page = null, activate = true } = {}) {
+  const tabCanvas = document.createElement('canvas');
+  tabCanvas.className = 'viewport';
+  tabCanvas.tabIndex = 0;
+  tabCanvas.hidden = true; // yalnızca activateTab görünür yapar
+  tabCanvas.setAttribute('aria-label', 'Narvis sayfa görünümü — tıklayıp klavyeyle formları kullanın');
+  const size = desiredSizeFor('desktop');
+  tabCanvas.width = size.width;
+  tabCanvas.height = size.height;
+  stage.insertBefore(tabCanvas, selection);
 
-const initial = desiredSize();
-const engineOptions = {
-  width: initial.width,
-  height: initial.height,
-  onStats: (stats) => handleStats(stats),
-  onConsole: (entry) => appendConsole(entry.level, entry.text, entry.time),
-  onNavigation: (href) => handleNavigation(href),
-  onFormSubmit: () => setStatus('gönderiliyor…', 'busy'),
-  onFileChoose: (input) => chooseFile(input),
-  onFormResponse: (result) => handleFormResponse(result),
-  onError: (entry) => {
-    state.errors += 1;
-    updateConsoleCount();
-    setStatus('hata', 'error');
-    toast(`Motor hatası: ${String(entry.text).split('\n')[0]}`, true);
-  },
-  onScroll: () => updateScrollUI(),
+  const tab = {
+    id: ++tabSeq,
+    title: 'Yeni sekme',
+    loading: false,
+    loadToken: 0,
+    closed: false,
+    canvas: tabCanvas,
+    engine: null,
+    state: makeTabState(),
+    consoleEntries: [],
+    consoleTotal: 0,
+    stats: null,
+    el: null,
+    titleEl: null,
+    moveRaf: 0,
+    lastPointer: { x: 0, y: 0 },
+  };
+  tab.state.viewport = { ...size };
+
+  tab.engine = new NarvisEngine(tabCanvas, {
+    width: size.width,
+    height: size.height,
+    onStats: (stats) => handleStats(stats, tab),
+    onConsole: (entry) => appendConsole(entry.level, entry.text, entry.time, tab),
+    onNavigation: (href, anchor, mods) => handleNavigation(href, anchor, mods, tab),
+    onFormSubmit: () => { if (tab === activeTab) setStatus('gönderiliyor…', 'busy'); },
+    onFileChoose: (input) => chooseFile(input, tab),
+    onFormResponse: (result) => handleFormResponse(result, tab),
+    onError: (entry) => {
+      tab.state.errors += 1;
+      renderTabs();
+      if (tab !== activeTab) return;
+      updateConsoleCount();
+      setStatus('hata', 'error');
+      toast(`Motor hatası: ${String(entry.text).split('\n')[0]}`, true);
+    },
+    onScroll: () => { if (tab === activeTab) updateScrollUI(); },
+  });
+
+  bindCanvasEvents(tab);
+  buildTabElement(tab);
+  tabs.push(tab);
+  if (activate) activateTab(tab);
+  else renderTabs();
+  if (page) loadPage(page, { push: true }, tab);
+  return tab;
+}
+
+function buildTabElement(tab) {
+  const el = document.createElement('div');
+  el.className = 'tab-item';
+  el.setAttribute('role', 'tab');
+  el.tabIndex = 0;
+
+  const spinner = document.createElement('span');
+  spinner.className = 'tab-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+
+  const favicon = document.createElement('span');
+  favicon.className = 'tab-favicon';
+  favicon.setAttribute('aria-hidden', 'true');
+
+  const title = document.createElement('span');
+  title.className = 'tab-title';
+  title.textContent = tab.title;
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'tab-close';
+  close.title = 'Sekmeyi kapat (Ctrl+W)';
+  close.setAttribute('aria-label', 'Sekmeyi kapat');
+  close.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg>';
+  close.addEventListener('click', (event) => {
+    event.stopPropagation();
+    closeTab(tab);
+  });
+
+  el.append(spinner, favicon, title, close);
+  el.addEventListener('click', () => activateTab(tab));
+  el.addEventListener('auxclick', (event) => {
+    if (event.button === 1) {
+      event.preventDefault();
+      closeTab(tab);
+    }
+  });
+  el.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      activateTab(tab);
+    } else if (event.key === 'Delete') {
+      event.preventDefault();
+      closeTab(tab);
+    }
+  });
+
+  tab.el = el;
+  tab.titleEl = title;
+  tabStrip.append(el);
+}
+
+tabStrip.addEventListener('mousedown', (event) => {
+  if (event.button === 1) event.preventDefault(); // orta tık otomatik kaydırma
+});
+
+function renderTabs() {
+  for (const tab of tabs) {
+    tab.el.classList.toggle('is-active', tab === activeTab);
+    tab.el.classList.toggle('is-loading', tab.loading);
+    tab.el.classList.toggle('has-errors', tab.state.errors > 0);
+    tab.el.setAttribute('aria-selected', String(tab === activeTab));
+    tab.titleEl.textContent = tab.title;
+    tab.el.title = tab.state.page ? `${tab.title}\n${tab.state.page}` : tab.title;
+  }
+  activeTab?.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function activateTab(tab) {
+  if (!tab || tab.closed || tab === activeTab) return;
+  if (activeTab) activeTab.canvas.hidden = true;
+  activeTab = tab;
+  canvas = tab.canvas;
+  engine = tab.engine;
+  state = tab.state;
+  canvas.hidden = false;
+  syncChrome();
+  applyViewport();
+  renderTabs();
+}
+
+function closeTab(tab) {
+  if (!tab || tab.closed) return;
+  tab.closed = true;
+  const index = tabs.indexOf(tab);
+  tab.engine.destroy();
+  tab.canvas.remove();
+  tab.el.remove();
+  tabs.splice(index, 1);
+
+  if (activeTab === tab) {
+    activeTab = null;
+    const next = tabs[Math.min(index, tabs.length - 1)];
+    if (next) activateTab(next);
+    else createTab({ page: START_PAGE });
+  }
+  renderTabs();
+}
+
+function cycleTab(delta) {
+  if (tabs.length < 2) return;
+  const index = tabs.indexOf(activeTab);
+  activateTab(tabs[(index + delta + tabs.length) % tabs.length]);
+}
+
+/* Etkin sekmenin durumunu araç çubuğuna, denetçiye ve düzenleyiciye yansıt. */
+function syncChrome() {
+  addressInput.value = state.page;
+  statusPage.textContent = state.page || '—';
+  editorFile.textContent = state.page;
+  editorPanel.hidden = !state.editorOpen;
+  editorBtn.setAttribute('aria-pressed', String(state.editorOpen));
+  if (state.editorOpen) editorText.value = state.source;
+
+  devtools.hidden = !state.devtoolsOpen;
+  devtoolsBtn.setAttribute('aria-pressed', String(state.devtoolsOpen));
+  inspectBtn.setAttribute('aria-pressed', String(state.inspect));
+  canvas.style.cursor = state.inspect ? 'crosshair' : 'auto';
+
+  for (const btn of viewports.querySelectorAll('.view-btn')) {
+    btn.classList.toggle('is-active', btn.dataset.preset === state.preset);
+  }
+
+  styleFilter.value = state.filter;
+  selectionLabel.textContent = state.selected ? describe(state.selected) : 'öğe seçilmedi';
+  styleElement.textContent = state.selected ? describe(state.selected) : 'Bir öğe seçilmedi';
+
+  renderConsole(activeTab);
+  rebuildTree();
+  renderStyleLists();
+  renderBoxModel();
+  updateStats(activeTab.stats ?? engine.stats);
+  updateScrollUI();
+  updateHistoryButtons();
+  positionSelection();
+  positionHoverRing();
+  updateBookmarkStar();
+  document.title = state.page ? `${activeTab.title} — Narvis` : 'Narvis — kendi HTML/JS motoru';
+  setStatus(activeTab.loading ? 'yükleniyor…' : 'hazır', activeTab.loading ? 'busy' : '');
+}
+
+window.NarvisShell = {
+  get engine() { return engine; },
+  get state() { return state; },
+  get tabs() { return tabs; },
+  get activeTab() { return activeTab; },
+  createTab,
+  closeTab,
+  activateTab,
 };
-
-engine = new NarvisEngine(canvas, engineOptions);
-engine.openEditor = openEditor;
-state.viewport = { width: engine.viewport.width, height: engine.viewport.height };
-window.NarvisShell = { engine, state };
 
 /* Gizli yerel dosya secici: sayfadaki input[type=file] tiklamasi acar;
    secilen gercek File nesneleri motordaki input.files'a yazilir. */
-function chooseFile(input) {
+function chooseFile(input, tab) {
   if (!input || !filePicker) return;
-  pendingFileInput = input;
+  pendingFileInput = { tab, input };
   filePicker.multiple = input.hasAttribute('multiple');
   const accept = input.getAttribute('accept');
   if (accept) filePicker.setAttribute('accept', accept);
@@ -141,28 +338,33 @@ function chooseFile(input) {
 }
 
 filePicker.addEventListener('change', () => {
-  const target = pendingFileInput;
+  const pending = pendingFileInput;
   pendingFileInput = null;
-  if (!target) return;
+  if (!pending || pending.tab.closed) return;
   const count = filePicker.files?.length ?? 0;
-  engine.setFiles(target, filePicker.files);
-  if (count) setStatus(`${count} dosya seçildi`, 'ok');
+  pending.tab.engine.setFiles(pending.input, filePicker.files);
+  if (count && pending.tab === activeTab) setStatus(`${count} dosya seçildi`, 'ok');
 });
 
 /* ------------------------------------------------------------------ *
  * Görünüm boyutu
  * ------------------------------------------------------------------ */
 
-function desiredSize() {
+function desiredSizeFor(preset) {
   const availW = Math.max(320, stageWrap.clientWidth - 48);
   const availH = Math.max(280, stageWrap.clientHeight - 46);
   let width = availW;
-  if (state.preset === 'tablet') width = Math.min(820, availW);
-  else if (state.preset === 'mobile') width = Math.min(390, availW);
+  if (preset === 'tablet') width = Math.min(820, availW);
+  else if (preset === 'mobile') width = Math.min(390, availW);
   return { width, height: availH };
 }
 
+function desiredSize() {
+  return desiredSizeFor(state?.preset ?? 'desktop');
+}
+
 function applyViewport() {
+  if (!engine || !state) return;
   const next = desiredSize();
   if (next.width === state.viewport.width && next.height === state.viewport.height) return;
   state.viewport = next;
@@ -191,18 +393,19 @@ resizeObserver.observe(stageWrap);
  * Sayfa yükleme / gezinme
  * ------------------------------------------------------------------ */
 
-function resolvePage(raw) {
+function resolvePage(raw, tab = activeTab) {
   let value = String(raw ?? '').trim();
   if (!value) return null;
   if (value.startsWith('#')) return { hash: value.slice(1) };
 
   value = value.replace(/^narvis:\/\//i, '');
+  const base = tab?.state.page || HOME_PAGE;
   let url;
   try {
-    if (value.startsWith('/') || value.startsWith('pages/')) {
-      url = new URL(value.startsWith('/') ? value : '/' + value, location.href);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('/') || value.startsWith('pages/')) {
+      url = new URL(value.startsWith('/') ? value : value.includes('://') ? value : '/' + value, location.href);
     } else {
-      url = new URL(value, new URL(state.page, location.href));
+      url = new URL(value, new URL(base, location.href));
     }
   } catch {
     return null;
@@ -212,156 +415,196 @@ function resolvePage(raw) {
 
   let path = decodeURIComponent(url.pathname).replace(/^\/+/, '');
   if (!path || path.endsWith('/')) path += 'index.html';
-  if (!path.startsWith('pages/')) path = 'pages/' + path;
+  if (!path.includes('/') && !path.startsWith('pages/')) path = 'pages/' + path;
   if (!/\.[a-z0-9]+$/i.test(path)) path += '.html';
   return { path, search: url.search, hash: url.hash.slice(1) };
 }
 
-async function loadPage(raw, options = {}) {
-  const target = resolvePage(raw);
+async function loadPage(raw, options = {}, tab = activeTab) {
+  if (!tab || tab.closed) return false;
+  const target = resolvePage(raw, tab);
   if (!target) return false;
   if (target.external) {
     openExternal(target.external);
     return false;
   }
   if (target.hash && !target.path) {
-    scrollToHash(target.hash);
+    scrollToHash(target.hash, tab);
     return true;
   }
 
   const path = target.path;
   const requestPath = path + (target.search || '');
-  setStatus('getiriliyor…', 'busy');
+  const token = ++tab.loadToken;
+  tab.loading = true;
+  renderTabs();
+  if (tab === activeTab) setStatus('getiriliyor…', 'busy');
   try {
     const response = await fetch(requestPath, { cache: 'no-store' });
+    if (tab.closed || tab.loadToken !== token) return false;
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     const html = await response.text();
+    if (tab.closed || tab.loadToken !== token) return false;
 
-    state.page = requestPath;
-    state.source = html;
-    state.fetchedSource = html;
-    engine.load(html, { url: new URL(requestPath, location.href).href });
-    afterLoad(target.hash);
+    tab.state.page = requestPath;
+    tab.state.source = html;
+    tab.state.fetchedSource = html;
+    tab.engine.load(html, { url: new URL(requestPath, location.href).href });
+    afterLoad(tab, options.hash ?? target.hash);
 
     if (options.historyIndex != null) {
-      state.historyIndex = options.historyIndex;
+      tab.state.historyIndex = options.historyIndex;
     } else if (options.push) {
-      pushHistory(requestPath);
+      pushHistory(requestPath, tab);
     }
 
-    updateHistoryButtons();
-    setStatus('hazır');
+    tab.loading = false;
+    renderTabs();
+    if (tab === activeTab) {
+      updateHistoryButtons();
+      setStatus('hazır');
+    }
     return true;
   } catch (err) {
-    setStatus('yüklenemedi', 'error');
-    toast(`Sayfa yüklenemedi: ${path}`, true);
-    appendConsole('error', `fetch ${path}: ${err.message}`);
+    if (tab.closed || tab.loadToken !== token) return false;
+    tab.loading = false;
+    renderTabs();
+    appendConsole('error', `fetch ${path}: ${err.message}`, undefined, tab);
+    if (tab === activeTab) {
+      setStatus('yüklenemedi', 'error');
+      toast(`Sayfa yüklenemedi: ${path}`, true);
+    }
     return false;
   }
 }
 
-function afterLoad(hash) {
-  state.selected = null;
-  state.expanded = new Set();
-  state.lastNodes = -1;
-  state.filter = '';
+function afterLoad(tab, hash) {
+  const s = tab.state;
+  s.selected = null;
+  s.hoverEl = null;
+  s.expanded = new Set();
+  s.lastNodes = -1;
+  s.lastBoxes = -1;
+  s.filter = '';
+
+  const doc = tab.engine.document;
+  if (doc?.documentElement) s.expanded.add(doc.documentElement);
+  if (doc?.body) s.expanded.add(doc.body);
+
+  tab.title = doc?.title?.trim() || s.page.split('/').pop() || 'Yeni sekme';
+  renderTabs();
+
+  if (tab !== activeTab) return;
+
   styleFilter.value = '';
-
-  const doc = engine.document;
-  if (doc?.documentElement) state.expanded.add(doc.documentElement);
-  if (doc?.body) state.expanded.add(doc.body);
-
-  addressInput.value = state.page;
-  statusPage.textContent = state.page;
-  editorFile.textContent = state.page;
-  if (state.editorOpen) editorText.value = state.source;
-
-  const title = doc?.title ? `${doc.title} — Narvis` : 'Narvis — kendi HTML/JS motoru';
-  document.title = title;
+  addressInput.value = s.page;
+  statusPage.textContent = s.page;
+  editorFile.textContent = s.page;
+  if (s.editorOpen) editorText.value = s.source;
+  document.title = `${tab.title} — Narvis`;
 
   clearSelection();
   rebuildTree();
   renderStyleLists();
-  handleStats(engine.stats);
+  handleStats(tab.engine.stats, tab);
   updateScrollUI();
   updateHistoryButtons();
+  updateBookmarkStar();
 
-  if (hash) scrollToHash(hash);
+  if (hash) scrollToHash(hash, tab);
 }
 
-function pushHistory(path) {
-  if (state.history[state.historyIndex] === path) {
-    updateHistoryButtons();
+function pushHistory(path, tab = activeTab) {
+  const s = tab.state;
+  if (s.history[s.historyIndex] === path) {
+    if (tab === activeTab) updateHistoryButtons();
     return;
   }
-  state.history = state.history.slice(0, state.historyIndex + 1);
-  state.history.push(path);
-  state.historyIndex = state.history.length - 1;
-  updateHistoryButtons();
+  s.history = s.history.slice(0, s.historyIndex + 1);
+  s.history.push(path);
+  s.historyIndex = s.history.length - 1;
+  if (tab === activeTab) updateHistoryButtons();
 }
 
-async function goHistory(delta) {
-  const index = state.historyIndex + delta;
-  if (index < 0 || index >= state.history.length) return;
-  await loadPage(state.history[index], { historyIndex: index });
+async function goHistory(delta, tab = activeTab) {
+  if (!tab) return;
+  const index = tab.state.historyIndex + delta;
+  if (index < 0 || index >= tab.state.history.length) return;
+  await loadPage(tab.state.history[index], { historyIndex: index }, tab);
 }
 
 function updateHistoryButtons() {
+  if (!state) return;
   backBtn.disabled = state.historyIndex <= 0;
   forwardBtn.disabled = state.historyIndex >= state.history.length - 1;
 }
 
-function reloadPage() {
-  loadPage(state.page, { push: false });
+function reloadPage(tab = activeTab) {
+  if (tab?.state.page) loadPage(tab.state.page, { push: false }, tab);
 }
 
-function handleNavigation(href) {
-  const target = resolvePage(href);
+function handleNavigation(href, anchor, mods = {}, tab = activeTab) {
+  const target = resolvePage(href, tab);
   if (!target) return;
   if (target.external) {
     openExternal(target.external);
     return;
   }
   if (target.hash && !target.path) {
-    scrollToHash(target.hash);
+    scrollToHash(target.hash, tab);
     return;
   }
-  if (target.path) loadPage(target.path, { push: true, hash: target.hash });
+  if (!target.path) return;
+
+  const request = target.path + (target.search || '') + (target.hash ? '#' + target.hash : '');
+  const wantsNewTab = mods.ctrlKey || mods.metaKey || anchor?.getAttribute?.('target') === '_blank';
+  if (wantsNewTab) {
+    createTab({ page: request, activate: false });
+    toast('Bağlantı arka planda yeni sekmede açıldı.');
+    return;
+  }
+  loadPage(request, { push: true }, tab);
 }
 
 /* Form yaniti: sunucudan donen HTML'i motorun yeni belgesi yapar.
    POST sonrasi URL adres cubuguna ve gecmise yazilir. */
-function handleFormResponse(result) {
-  if (!result) return false;
-  const requestUrl = result.url || result.request?.url || state.page;
+function handleFormResponse(result, tab = activeTab) {
+  if (!result || !tab || tab.closed) return false;
+  const requestUrl = result.url || result.request?.url || tab.state.page;
   const url = new URL(requestUrl, location.href);
   if (url.origin !== location.origin) {
     openExternal(url.href);
     return false;
   }
   if (!result.ok) {
-    setStatus(`form ${result.status}`, 'error');
-    toast(`Form yanıtı: ${result.status} ${result.statusText || ''}`.trim(), true);
-    appendConsole('error', `${result.request?.method || 'GET'} ${url.pathname} → ${result.status}`);
+    appendConsole('error', `${result.request?.method || 'GET'} ${url.pathname} → ${result.status}`, undefined, tab);
+    if (tab === activeTab) {
+      setStatus(`form ${result.status}`, 'error');
+      toast(`Form yanıtı: ${result.status} ${result.statusText || ''}`.trim(), true);
+    }
     return false;
   }
   const type = result.response?.headers?.get?.('content-type') || '';
   if (type && !/text\/html/i.test(type)) {
-    setStatus('hazır');
-    toast(`Form yanıtı ${type} — sayfa olarak yüklenmedi.`);
-    appendConsole('info', `Form yanıtı: ${type} (${result.status})`);
+    appendConsole('info', `Form yanıtı: ${type} (${result.status})`, undefined, tab);
+    if (tab === activeTab) {
+      setStatus('hazır');
+      toast(`Form yanıtı ${type} — sayfa olarak yüklenmedi.`);
+    }
     return false;
   }
 
   const display = url.pathname + url.search;
-  state.page = display;
-  state.source = result.html;
-  state.fetchedSource = result.html;
-  engine.load(result.html, { url: url.href });
-  afterLoad();
-  pushHistory(display);
-  setStatus('hazır');
-  toast('Form gönderildi — yanıt sayfası yüklendi.');
+  tab.state.page = display;
+  tab.state.source = result.html;
+  tab.state.fetchedSource = result.html;
+  tab.engine.load(result.html, { url: url.href });
+  afterLoad(tab);
+  pushHistory(display, tab);
+  if (tab === activeTab) {
+    setStatus('hazır');
+    toast('Form gönderildi — yanıt sayfası yüklendi.');
+  }
   return true;
 }
 
@@ -370,142 +613,242 @@ function openExternal(url) {
   window.open(url, '_blank', 'noopener');
 }
 
-function scrollToHash(id) {
-  if (!engine.document) return;
-  const el = id ? engine.document.getElementById(id) : engine.document.body;
+function scrollToHash(id, tab = activeTab) {
+  if (!tab?.engine.document) return;
+  const el = id ? tab.engine.document.getElementById(id) : tab.engine.document.body;
   if (!el) {
-    toast(`Hedef bulunamadı: #${id}`, true);
+    if (tab === activeTab) toast(`Hedef bulunamadı: #${id}`, true);
     return;
   }
   const box = el._box;
   if (!box) return;
-  engine.scrollTo({ left: 0, top: Math.max(0, box.y - 12) });
-  updateScrollUI();
+  tab.engine.scrollTo({ left: 0, top: Math.max(0, box.y - 12) });
+  if (tab === activeTab) updateScrollUI();
 }
 
 /* ------------------------------------------------------------------ *
- * Olay yönlendirme
+ * Olay yönlendirme (sekme başına bir kez bağlanır)
  * ------------------------------------------------------------------ */
 
-function canvasPoint(event) {
-  const rect = canvas.getBoundingClientRect();
+function canvasPoint(event, targetCanvas) {
+  const rect = targetCanvas.getBoundingClientRect();
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-/* Sürükleyerek metin seçerken imleç her harekette anında uygulanır; normal
-   hover kontrolünde frame başına bir kez hareket ettirilir. */
-canvas.addEventListener('mousemove', (event) => {
-  const point = canvasPoint(event);
-  lastPointer = point;
-  if (engine.isDragSelecting()) {
-    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
-    engine.pointerMove(point.x, point.y);
-    if (state.inspect) canvas.style.cursor = 'crosshair';
-    return;
-  }
-  if (moveRaf) return;
-  moveRaf = requestAnimationFrame(() => {
-    moveRaf = 0;
-    engine.pointerMove(lastPointer.x, lastPointer.y);
-    if (state.inspect) canvas.style.cursor = 'crosshair';
+function bindCanvasEvents(tab) {
+  const c = tab.canvas;
+  const eng = tab.engine;
+  const s = tab.state;
+
+  /* Sürükleyerek metin seçerken imleç her harekette anında uygulanır; normal
+     hover kontrolünde frame başına bir kez hareket ettirilir. */
+  c.addEventListener('mousemove', (event) => {
+    const point = canvasPoint(event, c);
+    tab.lastPointer = point;
+    if (eng.isDragSelecting()) {
+      if (tab.moveRaf) { cancelAnimationFrame(tab.moveRaf); tab.moveRaf = 0; }
+      eng.pointerMove(point.x, point.y);
+      if (s.inspect) c.style.cursor = 'crosshair';
+      return;
+    }
+    if (tab.moveRaf) return;
+    tab.moveRaf = requestAnimationFrame(() => {
+      tab.moveRaf = 0;
+      eng.pointerMove(tab.lastPointer.x, tab.lastPointer.y);
+      if (s.inspect) c.style.cursor = 'crosshair';
+    });
   });
-});
 
-canvas.addEventListener('mouseleave', () => {
-  engine.setHover(null);
-});
+  c.addEventListener('mouseleave', () => eng.setHover(null));
 
-/* Fare asagi/yukari: motor surukleme secimini ve cift tigi yonetir. */
-canvas.addEventListener('mousedown', (event) => {
-  if (event.button !== 0) return;
-  const point = canvasPoint(event);
-  engine.pointerDown(point.x, point.y, { shiftKey: event.shiftKey });
-});
-
-canvas.addEventListener('mouseup', (event) => {
-  if (event.button !== 0) return;
-  const point = canvasPoint(event);
-  engine.pointerUp(point.x, point.y);
-});
-
-canvas.addEventListener('click', (event) => {
-  const point = canvasPoint(event);
-  canvas.focus({ preventScroll: true });
-
-  if (state.inspect) {
-    const el = engine.elementAt(point.x, point.y);
-    selectElement(el);
-    return;
-  }
-
-  const el = engine.click(point.x, point.y, { shiftKey: event.shiftKey, ctrlKey: event.ctrlKey });
-  const anchor = el?.closest?.('a[href]');
-  if (anchor) {
-    const href = anchor.getAttribute('href');
-    if (href && href.startsWith('#')) scrollToHash(href.slice(1));
-  }
-});
-
-/* Klavye ve pano olaylari canvas'a baglanir; motor odakli forma uygular. */
-canvas.addEventListener('keydown', (event) => {
-  if (event.isComposing) return;
-  const handled = engine.handleKeyDown({
-    key: event.key,
-    code: event.code,
-    location: event.location,
-    ctrlKey: event.ctrlKey,
-    shiftKey: event.shiftKey,
-    altKey: event.altKey,
-    metaKey: event.metaKey,
-    repeat: event.repeat,
-    isComposing: event.isComposing,
-    keyCode: event.keyCode,
-    which: event.which,
+  c.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    const point = canvasPoint(event, c);
+    eng.pointerDown(point.x, point.y, { shiftKey: event.shiftKey });
   });
-  if (handled) event.preventDefault();
-});
 
-canvas.addEventListener('keyup', (event) => {
-  engine.handleKeyUp({
-    key: event.key,
-    code: event.code,
-    location: event.location,
-    ctrlKey: event.ctrlKey,
-    shiftKey: event.shiftKey,
-    altKey: event.altKey,
-    metaKey: event.metaKey,
-    keyCode: event.keyCode,
-    which: event.which,
+  c.addEventListener('mouseup', (event) => {
+    if (event.button !== 0) return;
+    const point = canvasPoint(event, c);
+    eng.pointerUp(point.x, point.y);
   });
-});
 
-canvas.addEventListener('paste', (event) => {
-  const text = event.clipboardData?.getData('text/plain') ?? '';
-  if (engine.insertClipboardText(text)) event.preventDefault();
-});
+  c.addEventListener('click', (event) => {
+    const point = canvasPoint(event, c);
+    c.focus({ preventScroll: true });
 
-canvas.addEventListener('copy', (event) => {
-  const text = engine.selectedText();
-  if (!text) return;
-  event.clipboardData?.setData('text/plain', text);
-  event.preventDefault();
-});
+    if (s.inspect) {
+      selectElement(eng.elementAt(point.x, point.y));
+      return;
+    }
 
-canvas.addEventListener('cut', (event) => {
-  const text = engine.cutSelectedText();
-  if (!text) return;
-  event.clipboardData?.setData('text/plain', text);
-  event.preventDefault();
-});
+    const el = eng.click(point.x, point.y, {
+      shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
+    });
+    const anchor = el?.closest?.('a[href]');
+    if (anchor) {
+      const href = anchor.getAttribute('href');
+      if (href && href.startsWith('#')) scrollToHash(href.slice(1), tab);
+    }
+  });
 
-canvas.addEventListener('wheel', (event) => {
-  if (event.ctrlKey) return;
-  const point = canvasPoint(event);
-  const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? engine.viewport.height : 1;
-  if (engine.wheel(point.x, point.y, event.deltaX * scale, event.deltaY * scale)) {
+  /* Klavye ve pano olaylari canvas'a baglanir; motor odakli forma uygular. */
+  c.addEventListener('keydown', (event) => {
+    if (event.isComposing) return;
+    const handled = eng.handleKeyDown({
+      key: event.key,
+      code: event.code,
+      location: event.location,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+      repeat: event.repeat,
+      isComposing: event.isComposing,
+      keyCode: event.keyCode,
+      which: event.which,
+    });
+    if (handled) event.preventDefault();
+  });
+
+  c.addEventListener('keyup', (event) => {
+    eng.handleKeyUp({
+      key: event.key,
+      code: event.code,
+      location: event.location,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+      keyCode: event.keyCode,
+      which: event.which,
+    });
+  });
+
+  c.addEventListener('paste', (event) => {
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    if (eng.insertClipboardText(text)) event.preventDefault();
+  });
+
+  c.addEventListener('copy', (event) => {
+    const text = eng.selectedText();
+    if (!text) return;
+    event.clipboardData?.setData('text/plain', text);
     event.preventDefault();
+  });
+
+  c.addEventListener('cut', (event) => {
+    const text = eng.cutSelectedText();
+    if (!text) return;
+    event.clipboardData?.setData('text/plain', text);
+    event.preventDefault();
+  });
+
+  c.addEventListener('wheel', (event) => {
+    if (event.ctrlKey) return;
+    const point = canvasPoint(event, c);
+    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? eng.viewport.height : 1;
+    if (eng.wheel(point.x, point.y, event.deltaX * scale, event.deltaY * scale)) {
+      event.preventDefault();
+    }
+  }, { passive: false });
+}
+
+/* ------------------------------------------------------------------ *
+ * Yer imleri
+ * ------------------------------------------------------------------ */
+
+const BM_KEY = 'narvis.bookmarks.v1';
+
+function loadBookmarks() {
+  try {
+    const raw = localStorage.getItem(BM_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) return list.filter((b) => b && typeof b.path === 'string' && typeof b.title === 'string');
+    }
+  } catch { /* bozuk kayıt varsayılanlara düşer */ }
+  return [
+    { title: 'Başlangıç', path: START_PAGE },
+    { title: 'Demo', path: HOME_PAGE },
+    { title: 'Hakkında', path: 'pages/about.html' },
+  ];
+}
+
+let bookmarks = loadBookmarks();
+
+function saveBookmarks() {
+  try { localStorage.setItem(BM_KEY, JSON.stringify(bookmarks)); } catch { /* depolama kapalı olabilir */ }
+}
+
+function renderBookmarks() {
+  bookmarksBar.textContent = '';
+  if (!bookmarks.length) {
+    const empty = document.createElement('span');
+    empty.className = 'bm-empty';
+    empty.textContent = 'Yer imi yok — adres çubuğundaki ☆ ile bu sayfayı ekleyebilirsin.';
+    bookmarksBar.append(empty);
+    return;
   }
-}, { passive: false });
+  for (const bm of bookmarks) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'bm-chip' + (state?.page === bm.path ? ' is-current' : '');
+    chip.title = `${bm.title} — ${bm.path}\nOrta tık: yeni sekmede aç`;
+    chip.innerHTML = '<svg class="bm-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.8h8v12.4L8 11l-4 3.2V1.8z"/></svg>';
+    const label = document.createElement('span');
+    label.textContent = bm.title;
+    chip.append(label);
+
+    const remove = document.createElement('span');
+    remove.className = 'bm-remove';
+    remove.setAttribute('role', 'button');
+    remove.setAttribute('aria-label', 'Yer imini kaldır');
+    remove.title = 'Yer imini kaldır';
+    remove.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg>';
+    remove.addEventListener('click', (event) => {
+      event.stopPropagation();
+      bookmarks = bookmarks.filter((b) => b !== bm);
+      saveBookmarks();
+      updateBookmarkStar();
+      toast(`Yer imi kaldırıldı: ${bm.title}`);
+    });
+    chip.append(remove);
+
+    chip.addEventListener('click', () => loadPage(bm.path, { push: true }));
+    chip.addEventListener('auxclick', (event) => {
+      if (event.button === 1) {
+        event.preventDefault();
+        createTab({ page: bm.path, activate: false });
+      }
+    });
+    bookmarksBar.append(chip);
+  }
+}
+
+function updateBookmarkStar() {
+  const saved = !!state?.page && bookmarks.some((b) => b.path === state.page);
+  bookmarkBtn.setAttribute('aria-pressed', String(saved));
+  bookmarkBtn.title = saved ? 'Yer imlerinden çıkar (Ctrl+D)' : 'Yer imlerine ekle (Ctrl+D)';
+  bookmarkBtn.setAttribute('aria-label', bookmarkBtn.title);
+  renderBookmarks();
+}
+
+function toggleBookmark() {
+  if (!state?.page || !activeTab) return;
+  const existing = bookmarks.find((b) => b.path === state.page);
+  if (existing) {
+    bookmarks = bookmarks.filter((b) => b !== existing);
+    toast(`Yer iminden çıkarıldı: ${existing.title}`);
+  } else {
+    bookmarks.push({ title: activeTab.title || state.page, path: state.page });
+    toast(`Yer imlerine eklendi: ${activeTab.title}`);
+  }
+  saveBookmarks();
+  updateBookmarkStar();
+}
+
+bookmarkBtn.addEventListener('click', toggleBookmark);
 
 /* ------------------------------------------------------------------ *
  * Öğe seçimi / vurgu
@@ -555,9 +898,9 @@ function scheduleSelection() {
 }
 
 function positionSelection() {
-  const el = state.selected;
+  const el = state?.selected;
   const box = el?._box;
-  if (!el || !box) {
+  if (!el || !box || !engine) {
     selection.hidden = true;
     return;
   }
@@ -582,8 +925,8 @@ function positionSelection() {
 
 /* Kütük ağacında hover edilen öğeyi canvas'ta vurgula. */
 function positionHoverRing() {
-  const box = state.hoverEl?._box;
-  if (!box) {
+  const box = state?.hoverEl?._box;
+  if (!box || !engine) {
     hoverRing.hidden = true;
     return;
   }
@@ -616,7 +959,7 @@ function bmSides(obj) {
 }
 
 function renderBoxModel() {
-  const el = state.selected;
+  const el = state?.selected;
   const box = el?._box;
   boxModelSide.hidden = !box;
   boxModelFull.hidden = !box;
@@ -677,8 +1020,8 @@ function scheduleTreeRefresh() {
 }
 
 function rebuildTree() {
-  const doc = engine.document;
-  if (!doc?.documentElement || !state.devtoolsOpen) return;
+  const doc = engine?.document;
+  if (!doc?.documentElement || !state?.devtoolsOpen) return;
 
   domTree.textContent = '';
   const fragment = document.createDocumentFragment();
@@ -780,7 +1123,7 @@ const STYLE_PRIORITY = [
 const priorityIndex = new Map(STYLE_PRIORITY.map((key, index) => [key, index]));
 
 function styleEntries() {
-  const style = state.selected?._style;
+  const style = state?.selected?._style;
   if (!style) return [];
   const entries = Object.entries(style).filter(([key]) => !key.startsWith('_'));
   entries.sort((a, b) => {
@@ -817,7 +1160,7 @@ function renderStyleLists() {
   styleList.textContent = '';
   styleListFull.textContent = '';
 
-  if (!state.selected || !entries.length) {
+  if (!state?.selected || !entries.length) {
     const hint = document.createElement('div');
     hint.className = 'style-hint';
     hint.innerHTML = 'Bir öğe seçmek için DOM ağacına tıklayın ya da araç çubuğundaki <code>öğe seç</code> düğmesini kullanın.';
@@ -874,7 +1217,7 @@ openStyleTab.addEventListener('click', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Konsol
+ * Konsol (sekme başına ayrı kayıt)
  * ------------------------------------------------------------------ */
 
 function timeLabel(date) {
@@ -882,52 +1225,69 @@ function timeLabel(date) {
   return d.toLocaleTimeString('tr-TR', { hour12: false });
 }
 
-function appendConsole(level, text, time) {
+function appendConsole(level, text, time, tab = activeTab) {
+  if (!tab || tab.closed) return;
+  const entry = { level, text: String(text), time: time instanceof Date ? time : new Date() };
+  tab.consoleEntries.push(entry);
+  if (tab.consoleEntries.length > 400) tab.consoleEntries.shift();
+  tab.consoleTotal += 1;
+  if (tab !== activeTab) return;
+  appendConsoleRow(entry);
+  updateConsoleCount();
+  consoleList.scrollTop = consoleList.scrollHeight;
+}
+
+function appendConsoleRow(entry) {
   const empty = consoleList.querySelector('.console-empty');
   if (empty) empty.remove();
 
   const row = document.createElement('div');
-  row.className = `console-row ${level}`;
+  row.className = `console-row ${entry.level}`;
 
   const stamp = document.createElement('span');
   stamp.className = 'console-time';
-  stamp.textContent = timeLabel(time);
+  stamp.textContent = timeLabel(entry.time);
 
   const badge = document.createElement('span');
   badge.className = 'console-level';
-  badge.textContent = level === 'log' ? 'log' : level === 'input' ? '›' : level === 'result' ? '←' : level;
+  badge.textContent = entry.level === 'log' ? 'log' : entry.level === 'input' ? '›' : entry.level === 'result' ? '←' : entry.level;
 
   const message = document.createElement('span');
   message.className = 'console-msg';
-  message.textContent = text;
+  message.textContent = entry.text;
 
   row.append(stamp, badge, message);
   consoleList.append(row);
+}
 
-  if (consoleList.childElementCount > 400) consoleList.firstElementChild?.remove();
-
-  consoleTotal += 1;
+function renderConsole(tab) {
+  consoleList.textContent = '';
+  if (!tab.consoleEntries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'console-empty';
+    empty.textContent = 'Konsol temiz. Sayfadaki console.log çağrıları ve hatalar burada görünür.';
+    consoleList.append(empty);
+  } else {
+    for (const entry of tab.consoleEntries) appendConsoleRow(entry);
+  }
   updateConsoleCount();
   consoleList.scrollTop = consoleList.scrollHeight;
 }
 
 function updateConsoleCount() {
-  consoleCount.textContent = String(consoleTotal);
-  consoleCount.classList.toggle('has-errors', state.errors > 0);
+  consoleCount.textContent = String(activeTab?.consoleTotal ?? 0);
+  consoleCount.classList.toggle('has-errors', (state?.errors ?? 0) > 0);
 }
 
-function clearConsoleEntries() {
-  consoleList.textContent = '';
-  consoleTotal = 0;
-  state.errors = 0;
-  updateConsoleCount();
-
-  const empty = document.createElement('div');
-  empty.className = 'console-empty';
-  empty.textContent = 'Konsol temiz. Sayfadaki console.log çağrıları ve hatalar burada görünür.';
-  consoleList.append(empty);
-  consoleTotal = 0;
-  updateConsoleCount();
+function clearConsoleEntries(tab = activeTab) {
+  if (!tab) return;
+  tab.consoleEntries = [];
+  tab.consoleTotal = 0;
+  tab.state.errors = 0;
+  if (tab === activeTab) {
+    renderConsole(tab);
+    renderTabs();
+  }
 }
 
 consoleForm.addEventListener('submit', (event) => {
@@ -937,7 +1297,7 @@ consoleForm.addEventListener('submit', (event) => {
   appendConsole('input', code);
   consoleInput.value = '';
 
-  if (!engine.window) return;
+  if (!engine?.window) return;
   try {
     let result;
     try {
@@ -965,7 +1325,7 @@ function formatResult(value) {
   return String(value);
 }
 
-clearConsole.addEventListener('click', clearConsoleEntries);
+clearConsole.addEventListener('click', () => clearConsoleEntries());
 
 /* ------------------------------------------------------------------ *
  * Durum / istatistik
@@ -976,7 +1336,10 @@ function setStatus(text, tone = '') {
   statusDot.className = 'status-dot' + (tone ? ` is-${tone}` : '');
 }
 
-function handleStats(stats) {
+function handleStats(stats, tab = activeTab) {
+  if (!tab || tab.closed) return;
+  tab.stats = stats;
+  if (tab !== activeTab) return;
   updateStats(stats);
   updateScrollUI();
   scheduleSelection();
@@ -993,6 +1356,7 @@ function handleStats(stats) {
 }
 
 function updateStats(stats) {
+  if (!engine) return;
   const { width, height } = engine.viewport;
   statusViewport.textContent = `${width} × ${height}`;
   statusNodes.textContent = `${stats.nodes} düğüm`;
@@ -1007,6 +1371,7 @@ function updateStats(stats) {
 }
 
 function updateScrollUI() {
+  if (!engine) return;
   const max = engine.maxScroll();
   statusScroll.textContent = `${Math.round(engine.scrollY)} / ${Math.round(max.y)}`;
   scheduleSelection();
@@ -1122,8 +1487,8 @@ function applyEditor() {
   }
   try {
     state.source = source;
-    engine.load(source, { url: new URL(state.page, location.href).href });
-    afterLoad();
+    engine.load(source, { url: new URL(state.page || HOME_PAGE, location.href).href });
+    afterLoad(activeTab);
     setStatus('kaynak uygulandı');
     toast('Kaynak uygulandı — DOM, stiller ve pikseller yeniden üretildi.');
   } catch (err) {
@@ -1181,7 +1546,7 @@ addressForm.addEventListener('submit', (event) => {
     return;
   }
   if (target?.path) {
-    loadPage(target.path, { push: true, hash: target.hash });
+    loadPage(value, { push: true });
     addressInput.blur();
   }
 });
@@ -1190,11 +1555,12 @@ addressInput.addEventListener('focus', () => addressInput.select());
 
 backBtn.addEventListener('click', () => goHistory(-1));
 forwardBtn.addEventListener('click', () => goHistory(1));
-reloadBtn.addEventListener('click', reloadPage);
+reloadBtn.addEventListener('click', () => reloadPage());
 brand.addEventListener('click', (event) => {
   event.preventDefault();
-  loadPage('pages/demo.html', { push: true });
+  loadPage(HOME_PAGE, { push: true });
 });
+newTabBtn.addEventListener('click', () => createTab({ page: START_PAGE }));
 
 viewports.addEventListener('click', (event) => {
   const btn = event.target.closest('.view-btn');
@@ -1221,6 +1587,42 @@ window.addEventListener('keydown', (event) => {
   const mod = event.ctrlKey || event.metaKey;
   const key = event.key.toLowerCase();
 
+  /* Sekme kısayolları: Ctrl kombinasyonları masaüstü paketinde geçerli;
+     tarayıcı içinde bunları yakalayamadığı durumlar için Alt eşlenikleri var. */
+  if ((mod && !event.shiftKey && key === 't') || (event.altKey && !mod && key === 't')) {
+    event.preventDefault();
+    createTab({ page: START_PAGE });
+    return;
+  }
+  if ((mod && !event.shiftKey && key === 'w') || (event.altKey && !mod && key === 'w')) {
+    event.preventDefault();
+    closeTab(activeTab);
+    return;
+  }
+  if (mod && event.key === 'Tab') {
+    event.preventDefault();
+    cycleTab(event.shiftKey ? -1 : 1);
+    return;
+  }
+  if ((mod || event.altKey) && !event.shiftKey && /^[1-9]$/.test(event.key)) {
+    const target = tabs[Number(event.key) - 1];
+    if (target) {
+      event.preventDefault();
+      activateTab(target);
+    }
+    return;
+  }
+  if (mod && !event.shiftKey && key === 'l') {
+    event.preventDefault();
+    addressInput.focus();
+    addressInput.select();
+    return;
+  }
+  if (mod && !event.shiftKey && key === 'd') {
+    event.preventDefault();
+    toggleBookmark();
+    return;
+  }
   if (mod && !event.shiftKey && key === 'e') {
     event.preventDefault();
     toggleEditor();
@@ -1267,19 +1669,8 @@ window.addEventListener('error', (event) => {
  * Başlangıç
  * ------------------------------------------------------------------ */
 
-clearConsoleEntries();
+renderBookmarks();
+createTab({ page: HOME_PAGE });
 appendConsole('info', 'Narvis 0.1 — HTML/CSS/JS motoru Canvas üzerinde çalışıyor.');
-appendConsole('log', 'Konsola JavaScript yazabilir, DOM ağacını inceleyebilir ve kaynağı düzenleyebilirsin.');
-
-updateStats(engine.stats);
-setStatus('başlatılıyor…', 'busy');
-
-loadPage('pages/demo.html', { push: true }).then((ok) => {
-  if (ok) {
-    appendConsole('info', `${state.page} yüklendi · ${engine.stats.nodes} düğüm · ${engine.stats.boxes} kutu.`);
-  } else {
-    setStatus('hata', 'error');
-  }
-});
-
+appendConsole('log', 'Ctrl+T yeni sekme · Ctrl+W kapat · Ctrl+D yer imi · Ctrl+Tab sekme değiştir (tarayıcı içinde Alt+T / Alt+W / Alt+1…9).');
 applyViewport();

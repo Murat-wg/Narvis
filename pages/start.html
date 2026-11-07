@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <title>Yeni Sekme</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    html { background-color: #0f1218; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background-color: #0f1218;
+      background-image: radial-gradient(720px 340px at 50% -80px, rgba(255, 107, 53, 0.14), transparent 70%);
+      color: #e6eaf1;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 72px 28px 60px; }
+    .logo {
+      width: 64px; height: 64px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 18px;
+      background-image: linear-gradient(135deg, #ff8a5c, #f04a0a);
+      color: #fff9f5;
+      font-family: Georgia, serif;
+      font-size: 40px; font-weight: 700;
+      box-shadow: 0 14px 40px rgba(240, 74, 10, 0.35);
+      margin-bottom: 22px;
+    }
+    h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -0.5px; }
+    .sub { margin: 0 0 36px; color: #aab2c2; }
+    .sub strong { color: #ff8a5c; font-weight: 600; }
+    .cards { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 40px; }
+    .card {
+      flex: 1 1 200px;
+      padding: 18px 20px;
+      border: 1px solid #252b36;
+      border-radius: 12px;
+      background-color: #141821;
+      text-decoration: none;
+      color: #e6eaf1;
+    }
+    .card:hover { border-color: #ff6b35; background-color: #1a1f28; }
+    .card h2 { margin: 0 0 4px; font-size: 16px; }
+    .card p { margin: 0; font-size: 13px; color: #7d8697; }
+    .card .go { color: #ff6b35; font-size: 12px; font-weight: 600; }
+    h3 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: #7d8697; }
+    .keys { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 36px; }
+    .key-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #aab2c2; }
+    kbd {
+      font-family: Consolas, monospace; font-size: 11px;
+      padding: 2px 7px;
+      border: 1px solid #2a3140; border-bottom-width: 2px;
+      border-radius: 6px;
+      background-color: #1a1f28;
+      color: #e6eaf1;
+    }
+    .note {
+      padding: 14px 18px;
+      border-left: 3px solid #ff6b35;
+      border-radius: 0 10px 10px 0;
+      background-color: #141821;
+      color: #aab2c2; font-size: 13px;
+    }
+    @media (max-width: 640px) {
+      .wrap { padding-top: 44px; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">N</div>
+    <h1>Narvis'e hoş geldin</h1>
+    <p class="sub">Bu sayfanın her pikseli <strong>Narvis motoru</strong> tarafından Canvas üzerine çizildi — gerçek bir tarayıcı çekirdeği yok.</p>
+
+    <div class="cards">
+      <a class="card" href="demo.html">
+        <h2>Etkileşimli demo</h2>
+        <p>Formlar, yerleşim, kaydırma ve canlı script örnekleri.</p>
+        <span class="go">Aç →</span>
+      </a>
+      <a class="card" href="about.html">
+        <h2>Mimari notları</h2>
+        <p>Ayrıştırma, kaskad, yerleşim ve boyama hattı.</p>
+        <span class="go">Aç →</span>
+      </a>
+    </div>
+
+    <h3>Kısayollar</h3>
+    <div class="keys">
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>T</kbd> yeni sekme</span>
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>W</kbd> sekme kapat</span>
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>Tab</kbd> sekme değiştir</span>
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>D</kbd> yer imi</span>
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>L</kbd> adres çubuğu</span>
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>E</kbd> kaynak düzenleyici</span>
+      <span class="key-row"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> denetçi</span>
+      <span class="key-row"><kbd>Alt</kbd>+<kbd>←</kbd> geri</span>
+    </div>
+
+    <div class="note">
+      İpucu: bir bağlantıya <strong>Ctrl+tık</strong> arka planda yeni sekmede açar; sekme başlığına <strong>orta tık</strong> kapatır.
+      Adres çubuğuna <strong>demo</strong> veya <strong>pages/about.html</strong> yazabilirsin.
+    </div>
+  </div>
+  <script>
+    console.log('Başlangıç sayfası hazır — kısayollar yukarıda.');
+  </script>
+</body>
+</html>

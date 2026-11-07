@@ -12,8 +12,11 @@ iç kaydırma (overlay çubuklar, tekerlek zinciri, `scrollTop` API'si),
 `position: sticky` kaydırma davranışı; harici CSS/JS yükleme
 (`<link rel="stylesheet">`, `<script src>`); formlar gerçek klavye girdisi,
 kısıt doğrulaması, dosya seçimi, Canvas üzerinde açılan `select` listesi ve
-`fetch` ile ağ gönderimini destekler. Bilinçli sınırlar aşağıda dürüstçe
-listelenir; üretim tarayıcısı değil, motorun omurgasını gösteren bir çalışmadır.
+`fetch` ile ağ gönderimini destekler. Kabuk artık çok sekmeli bir tarayıcı
+uygulamasıdır: her sekme kendi motorunu, canvas'ını, geçmişini ve konsolunu
+taşır; yer imleri çubuğu, yeni sekme başlangıç sayfası ve tarayıcı kısayolları
+hazırdır. Bilinçli sınırlar aşağıda dürüstçe listelenir; üretim tarayıcısı
+değil, motorun omurgasını gösteren bir çalışmadır.
 
 ```
 HTML metni
@@ -176,13 +179,27 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   olayları, `form` sıfırlama, kısıt doğrulaması ve `fetch` tabanlı gönderim.
 - `NarvisShell` kabuğu form yanıtını adres çubuğuna ve gezinme geçmişine yazar;
   geri tuşuyla forma dönülebilir.
+- Sekme kapatılınca `engine.destroy()` çağrılır: sayfanın `setTimeout` ve
+  `requestAnimationFrame` kayıtları iptal edilir, görüntü önbelleği boşaltılır
+  ve geç gelen geri çağrılar yok sayılır; böylece kapalı sekme sızmaz.
 
 ## Kabuk arayüzü
 
-`index.html` bir tarayıcı kabuğu sunar:
+`index.html` çok sekmeli bir tarayıcı kabuğu sunar:
 
+- **Sekmeler** — her sekme bağımsız bir motor, canvas, gezinme geçmişi, konsol
+  ve denetçi durumu tutar. Sekme çubuğunda başlık, yüklenme animasyonu ve hata
+  noktası görünür; `+` yeni sekme açar, orta tık sekme kapatır. Son sekme
+  kapanınca başlangıç sayfası yeniden doğar. `Ctrl+tık` veya `target="_blank"`
+  bağlantıları arka planda yeni sekmede açar.
+- **Yer imleri çubuğu** — adres çubuğundaki ☆ ile bulunulan sayfa eklenir/çıkarılır;
+  çipler tıklayınca gezinir, orta tıkla arka planda sekme açar, × ile kaldırılır.
+  Yer imleri `localStorage`'da saklanır; ilk açılışta Başlangıç/Demo/Hakkında
+  tohumlanır.
+- **Başlangıç sayfası** — yeni sekme `pages/start.html` açılır: demo ve hakkında
+  kartları, kısayol listesi ve ipuçları.
 - **Adres çubuğu** — `pages/demo.html`, `about.html` veya `demo` yazıp Enter'a basın.
-- **Geri / ileri / yenile** — sayfa geçmişi motorun kendi gezinme kancasıyla yönetilir.
+- **Geri / ileri / yenile** — her sekmenin kendi geçmişi motorun gezinme kancasıyla yönetilir.
 - **Masaüstü / tablet / mobil** — canvas viewport'u yeniden boyutlandırır; medya sorguları canlı çalışır.
 - **Kaynak (`Ctrl+E`)** — sayfanın HTML'ini düzenleyip `Ctrl+Enter` ile yeniden çalıştırın.
   Değişiklikler yalnızca bellekte kalır; sayfa yenilendiğinde özgün kaynak gelir.
@@ -190,9 +207,13 @@ Node 18+ yeterlidir; hiçbir npm paketi kurulmaz.
   vurgu kutusu güncellenir.
 - **Geliştirici araçları (`Ctrl+Shift+I` / `F12`)** — DOM, Stil, Konsol ve Bilgi sekmeleri.
 - **Konsol** — motorun `window` bağlamında JavaScript çalıştırır; sonucu ve hataları gösterir.
+  Konsol girdileri sekme başına izole tutulur.
 
-Kısayollar: `Ctrl+E` kaynak, `Ctrl+Shift+I` geliştirici araçları, `Ctrl+R` sayfayı yenile,
-`Alt+Sol` / `Alt+Sağ` gezinme, `Esc` açık paneli veya inceleme modunu kapat.
+Kısayollar: `Ctrl+T` yeni sekme, `Ctrl+W` sekme kapat, `Ctrl+Tab` sekme değiştir,
+`Ctrl+1…9` sekme seç, `Ctrl+L` adres çubuğu, `Ctrl+D` yer imi, `Ctrl+E` kaynak,
+`Ctrl+Shift+I` / `F12` geliştirici araçları, `Ctrl+R` yenile, `Alt+Sol` / `Alt+Sağ`
+gezinme, `Esc` açık paneli veya inceleme modunu kapat. Ev sahibi tarayıcı `Ctrl`
+kombinasyonlarını yakaladığında `Alt+T` / `Alt+W` / `Alt+1…9` yedekleri çalışır.
 
 ## Proje yapısı
 
@@ -200,8 +221,8 @@ Kısayollar: `Ctrl+E` kaynak, `Ctrl+Shift+I` geliştirici araçları, `Ctrl+R` s
 index.html            tarayıcı kabuğu
 styles/shell.css      yalnızca kabuğun CSS'i (motor bunu çizmez)
 src/
-  ui.js               kabuk: gezinme, denetçi, konsol, düzenleyici
-  engine.js           yükleme, reflow, boyama, olay yönlendirme, window ortamı
+  ui.js               kabuk: sekmeler, yer imleri, gezinme, denetçi, konsol, düzenleyici
+  engine.js           yükleme, reflow, boyama, olay yönlendirme, window ortamı, destroy
   dom.js              DOM düğümleri, olaylar, stil bildirimi proxy'si
   style.js            kaskad ve hesaplanmış stiller
   layout.js           blok / inline / float / flex / grid / tablo yerleşimi ve hit-test
@@ -213,6 +234,7 @@ src/
   html/               tokenizer, ağaç kurucu, varlıklar
   css/                seçiciler, değerler, kural ayrıştırıcı, UA stilleri
 pages/
+  start.html          yeni sekme başlangıç sayfası
   demo.html           etkileşimli tanıtım sayfası
   demo-ext.css        harici stil sayfası demosu (demo.html içinden yüklenir)
   demo-ext.js         harici script demosu (demo.html içinden yüklenir)
@@ -254,7 +276,9 @@ margin kutusu offsetleri) ve pseudo-element içerikleri
 (belge sırası, kaskad sırası, stil→script bloklaması, hata/ağ-yok yolları)
 ve eleman içi kaydırma (`scrollTop` kısıtlama, hit-test ofseti, tekerlek
 zinciri, iç içe kaplar, çubuk geometrisi, tutamak sürükleme, iz tıklaması,
-kaydırma kabındaki sticky) ayrı regresyon bloklarıyla kapsanır.
+kaydırma kabındaki sticky) ayrı regresyon bloklarıyla kapsanır. Sekme
+kapatma yaşam döngüsü de test edilir: `destroy()` sonrası sayfa
+zamanlayıcısı çalışmaz ve zamanlayıcı kayıtları temizlenir.
 
 ## Bilinçli sınırlar
 
@@ -288,7 +312,9 @@ Narvis üretim için bir tarayıcı değil, motorun omurgasını gösteren bir �
 - Animasyonlar ve geçişler yok. Kaydırma çubukları bindirmeli (overlay)
   çizilir: yerleşimde yer kaplamaz, `scrollbar-width`/`scrollbar-color`
   stilleri yoktur. `textarea` kendi iç kaydırmasını çizmez.
-- Sayfa başına tek Canvas; alt bileşenler ayrı katman değildir.
+- Sekme başına tek Canvas; alt bileşenler ayrı katman değildir. Sekmeler
+  arası durum (geçmiş, konsol, denetçi) izoledir ama tek iş parçacığında
+  çalışır; ağır bir sekme diğerlerinin karelerini geciktirebilir.
 
 Bu sınırlara rağmen boru hattı gerçektir: ayrıştırma, kaskad, değişkenler, kutu
 modeli, flex, grid, tablolar, hit-test ve piksel üretimi baştan sona bu depodaki

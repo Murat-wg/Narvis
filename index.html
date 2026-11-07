@@ -9,6 +9,14 @@
 </head>
 <body>
   <div class="app">
+    <div class="tabbar">
+      <div class="tab-strip" id="tabStrip" role="tablist" aria-label="Sekmeler"></div>
+      <button class="new-tab-btn" id="newTabBtn" type="button" title="Yeni sekme (Ctrl+T / Alt+T)" aria-label="Yeni sekme">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+      </button>
+      <span class="tabbar-hint">orta tık: kapat · Ctrl+tık: arka planda aç</span>
+    </div>
+
     <header class="chrome">
       <div class="chrome-left">
         <a class="brand" href="pages/demo.html" id="brand" title="Demo sayfasına dön">
@@ -35,6 +43,9 @@
         <input class="address-input" id="addressInput" type="text" value="pages/demo.html"
                spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Sayfa adresi">
         <span class="address-badge" id="addressBadge">motor</span>
+        <button class="icon-btn small star-btn" id="bookmarkBtn" type="button" title="Yer imlerine ekle (Ctrl+D)" aria-label="Yer imlerine ekle" aria-pressed="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6L8 1.8z"/></svg>
+        </button>
       </form>
 
       <div class="chrome-right">
@@ -69,10 +80,11 @@
       </div>
     </header>
 
+    <nav class="bookmarks" id="bookmarksBar" aria-label="Yer imleri"></nav>
+
     <main class="workspace" id="workspace">
       <div class="stage-wrap" id="stageWrap">
         <div class="stage" id="stage">
-          <canvas id="viewport" width="900" height="640" tabindex="0" aria-label="Narvis sayfa görünümü — tıklayıp klavyeyle formları kullanın"></canvas>
           <div class="selection" id="selection" hidden></div>
           <div class="hover-ring" id="hoverRing" hidden></div>
           <div class="scroll-rail" id="scrollRail"><div class="scroll-thumb" id="scrollThumb"></div></div>
@@ -170,16 +182,18 @@
               <h4>Desteklenen</h4>
               <div class="chips">
                 <span>HTML ayrıştırma</span><span>CSS kaskadı</span><span>blok / inline</span>
-                <span>flexbox</span><span>mutlak konum</span><span>medya sorguları</span>
-                <span>gradyan</span><span>gölge</span><span>resim</span><span>script</span>
+                <span>flexbox</span><span>grid</span><span>float</span><span>tablo</span>
+                <span>mutlak / sticky</span><span>medya sorguları</span><span>gradyan</span>
+                <span>gölge</span><span>resim</span><span>script</span><span>harici CSS/JS</span>
+                <span>form doğrulama</span><span>iç kaydırma</span><span>pseudo-element</span>
               </div>
             </div>
             <div class="info-block muted-block">
               <h4>Kapsam dışı</h4>
               <div class="chips">
-                <span>grid</span><span>float</span><span>tablo yerleşimi</span>
-                <span>pseudo-element</span><span>ağ üzerinden CSS</span><span>form doğrulama</span>
-                <span>animasyon</span><span>sticky</span>
+                <span>animasyon</span><span>@import</span><span>ES modülleri</span>
+                <span>async / defer</span><span>grid-area / minmax()</span>
+                <span>table-layout: fixed</span><span>IME</span><span>çok sütun</span>
               </div>
             </div>
           </div>

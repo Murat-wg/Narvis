@@ -1735,6 +1735,20 @@ const scrollHtml = `<!doctype html><style>
     'ickaydirma: kap basa donunce sticky tabanina doner');
 }
 
+/* Sekme kapatma: destroy sayfa zamanlayicilarini iptal eder. */
+{
+  const { engine } = makeEngineHarness(`<!doctype html><script>
+    setTimeout(() => { window.fired = true; }, 5);
+  </script>`);
+  await engine.ready;
+  engine.destroy();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert(engine.window.fired === undefined,
+    'destroy: kapatilan motorun sayfa zamanlayicisi calismaz');
+  assert(engine._pageTimers.size === 0 && engine._pageRafs.size === 0,
+    'destroy: zamanlayici kayitlari temizlenir');
+}
+
 if (failures > 0) {
   console.error(`\n${failures} test başarısız.`);
   process.exitCode = 1;

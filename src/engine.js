@@ -67,6 +67,9 @@ export class NarvisEngine {
     this._lastClick = null; // cift tik algilama
     this._undo = new Map(); // el -> onceki deger/caret anlik goruntuleri
     this._redo = new Map();
+    this._pageTimers = new Set(); // sayfa scriptlerinin setTimeout id'leri
+    this._pageRafs = new Set();
+    this._destroyed = false;
     this._fetch = options.fetchImpl ?? (typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null);
     this.onStats = options.onStats ?? null;
     this.onConsole = options.onConsole ?? null;
@@ -214,7 +217,7 @@ export class NarvisEngine {
       );
       fn(
         win, this.document, win.console,
-        (fn2, ms, ...args) => setTimeout(() => { try { fn2(...args); } catch (e) { this.reportError(e); } }, ms),
+        (fn2, ms, ...args) => this.pageTimeout(fn2, ms, args),
         (id) => clearTimeout(id),
         (fn2) => this.raf(fn2),
         (id) => cancelAnimationFrame(id),
@@ -224,9 +227,28 @@ export class NarvisEngine {
     }
   }
 
+  pageTimeout(fn, ms, args = []) {
+    const id = setTimeout(() => {
+      this._pageTimers.delete(id);
+      if (this._destroyed) return;
+      try { fn(...args); } catch (err) { this.reportError(err); }
+    }, ms);
+    this._pageTimers.add(id);
+    return id;
+  }
+
   raf(fn) {
-    if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(fn);
-    return setTimeout(fn, 16);
+    if (this._destroyed) return 0;
+    if (typeof requestAnimationFrame === 'function') {
+      const token = { id: 0 };
+      this._pageRafs.add(token);
+      token.id = requestAnimationFrame(() => {
+        this._pageRafs.delete(token);
+        if (!this._destroyed) fn();
+      });
+      return token.id;
+    }
+    return this.pageTimeout(fn, 16);
   }
 
   /* ---------------------------------------------------------------- *
@@ -633,7 +655,11 @@ export class NarvisEngine {
       const anchor = el.closest?.('a[href]');
       if (anchor) {
         const href = anchor.getAttribute('href');
-        if (href && !href.startsWith('#')) this.onNavigation?.(href, anchor);
+        if (href && !href.startsWith('#')) {
+          this.onNavigation?.(href, anchor, {
+            ctrlKey: !!options.ctrlKey, metaKey: !!options.metaKey, shiftKey: !!options.shiftKey,
+          });
+        }
       }
     }
     return el;
@@ -1964,7 +1990,7 @@ export class NarvisEngine {
       dispatchEvent: (event) => this.dispatchWindowEvent(event),
       requestAnimationFrame: (fn) => this.raf(fn),
       cancelAnimationFrame: (id) => cancelAnimationFrame?.(id),
-      setTimeout: (fn, ms, ...args) => setTimeout(() => { try { fn(...args); } catch (err) { engine.reportError(err); } }, ms),
+      setTimeout: (fn, ms, ...args) => this.pageTimeout(fn, ms, args),
       clearTimeout: (id) => clearTimeout(id),
       scrollTo: (options, y) => this.scrollTo(typeof options === 'number' ? { left: options, top: y } : options),
       scrollBy: (options, y) => this.scrollBy(typeof options === 'number' ? options : options.left ?? 0, typeof options === 'number' ? y ?? 0 : options.top ?? 0),
@@ -2070,7 +2096,13 @@ export class NarvisEngine {
   }
 
   destroy() {
+    this._destroyed = true;
     cancelAnimationFrame?.(this._raf);
+    for (const id of this._pageTimers) clearTimeout(id);
+    for (const token of this._pageRafs) cancelAnimationFrame?.(token.id);
+    this._pageTimers.clear();
+    this._pageRafs.clear();
+    clearTimeout(this._typeaheadTimer);
     this.imageCache.clear();
   }
 }
